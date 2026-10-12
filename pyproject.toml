@@ -11,6 +11,8 @@ dependencies = ["numpy", "pyyaml"]
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
+# per-phase extras (each phase group may live in its own environment, see envs/README.md)
+ingest = ["opencv-python-headless", "pillow"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -10,6 +10,8 @@ ingest:
   dedup_threshold: 0.97
   max_side: 1600
   max_frames: 300
+  min_frames: 20
+  blur_filter_photos: false
 
 # --- 01_sfm ---
 sfm:

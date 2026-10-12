@@ -43,10 +43,11 @@ class Phase(ABC):
     impl: ClassVar[str]  # e.g. "colmap"
     impl_version: ClassVar[str] = "0"
     contract_version: ClassVar[int] = 1
+    defaults: ClassVar[dict[str, Any]] = {}  # merged under the given config
 
     def __init__(self, ws: Workspace, config: dict[str, Any], edit_id: str | None = None):
         self.ws = ws
-        self.config = config
+        self.config = {**self.defaults, **config}
         self.edit_id = edit_id
         self.out_dir = ws.phase_dir(self.phase, edit_id)
 

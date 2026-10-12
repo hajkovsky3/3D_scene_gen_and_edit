@@ -10,6 +10,10 @@ výslovnom rozhodnutí · `ZAKÁZANÉ` = nekomerčné / územne obmedzené · `O
 
 | Komponent | Fáza | Kód | Váhy | Stav | Poznámka |
 |---|---|---|---|---|---|
+| OpenCV (`opencv-python-headless`) | 00 | Apache 2.0 | — | OK | wheel pribaľuje FFmpeg v LGPL zostave (dynamicky linkovaný) |
+| Pillow | 00 | MIT-CMU (HPND) | — | OK | |
+| NumPy | všetky | BSD-3 | — | OK | |
+| PyYAML | jadro | MIT | — | OK | |
 | COLMAP 4.x (+ GLOMAP, ALIKED, LightGlue) | 01 | BSD | — / ONNX modely | OVERIŤ váhy ALIKED/LightGlue | GLOMAP je od 4.0 súčasťou COLMAP |
 | VGGT (`VGGT-1B-Commercial`) | 01 alt | VGGT License | VGGT License, prístup cez formulár | HRANIČNÉ | pôvodný checkpoint `VGGT-1B` je nekomerčný |
 | gsplat | 02, 06, 11, 12 | Apache 2.0 | — | OK | |
@@ -43,4 +47,6 @@ výslovnom rozhodnutí · `ZAKÁZANÉ` = nekomerčné / územne obmedzené · `O
 | SuperPoint (váhy Magic Leap) | nekomerčná | hloc pipeline |
 | Hunyuan3D | Tencent licencia vylučujúca EÚ | image-to-3D |
 | FLUX.1-dev, SDXL-Turbo, SD 3.x | nekomerčné / vlastné | text-to-image |
+| `pillow-heif` (wheel balíčky) | BSD-3, ale pribaľuje x265 (GPL-2) | podpora HEIC vo fáze 00 |
+| PyAV (wheel balíčky) | BSD-3, ale pribaľuje x264/x265 (GPL-2) | čítanie videa vo fáze 00, nahradené `cv2.VideoCapture` |
 | Llama (multimodálne verzie) | Llama licencia, obmedzenia v EÚ | VLM |
