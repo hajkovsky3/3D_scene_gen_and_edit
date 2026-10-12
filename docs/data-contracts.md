@@ -68,7 +68,9 @@ dostanú nové ID (max + 1), zmazané ID sa znovu nepoužívajú.
 - **Kamera**: OpenCV konvencia — x doprava, y dole, z dopredu (do scény).
 - **Extrinsika**: `world_to_camera` ako 4×4 matica (rotácia + translácia), riadkovo v JSON.
 - **Intrinsika**: `fx, fy, cx, cy` v pixeloch pre rozlíšenie snímky uvedené v `cameras.json`,
-  model `PINHOLE` (snímky sú po fáze 01 undistortované).
+  model `PINHOLE` (snímky sú po fáze 01 undistortované). `cx, cy` sú v konvencii COLMAP
+  (stred ľavého horného pixelu má súradnice (0.5, 0.5)), presne ako ich zapíše COLMAP
+  a číta gsplat; nič sa neposúva.
 - **Svet**: po fáze 01 je scéna **zarovnaná s gravitáciou: +Z hore**. Mierka je ľubovoľná
   (SfM nepozná metre), ale je normalizovaná tak, aby rozptyl pozícií kamier bol približne 1.
   Transformácia z pôvodného SfM rámca je uložená v `01_sfm/alignment.json`.

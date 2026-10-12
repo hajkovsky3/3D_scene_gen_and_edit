@@ -15,6 +15,7 @@ výslovnom rozhodnutí · `ZAKÁZANÉ` = nekomerčné / územne obmedzené · `O
 | NumPy | všetky | BSD-3 | — | OK | |
 | PyYAML | jadro | MIT | — | OK | |
 | COLMAP 4.x (+ GLOMAP, ALIKED, LightGlue) | 01 | BSD | — / ONNX modely | OVERIŤ váhy ALIKED/LightGlue | GLOMAP je od 4.0 súčasťou COLMAP |
+| `pycolmap` 4.2 (wheel z PyPI) | 01 | BSD-3 | — | HRANIČNÉ (schválené) | wheel pribaľuje SuiteSparse: SPQR (GPL-2+), CHOLMOD (časti GPL-2+/LGPL-2.1+), ostatné BSD; ďalej Ceres (BSD), OpenImageIO (Apache 2.0), OpenBLAS (BSD). Autor schválil 2026-10-12 ako tranzitívnu binárnu závislosť externého nástroja: náš kód GPL kód neobsahuje ani nedistribuuje. Oficiálne binárky COLMAP majú to isté. |
 | VGGT (`VGGT-1B-Commercial`) | 01 alt | VGGT License | VGGT License, prístup cez formulár | HRANIČNÉ | pôvodný checkpoint `VGGT-1B` je nekomerčný |
 | gsplat | 02, 06, 11, 12 | Apache 2.0 | — | OK | |
 | RAM++ | 03 | Apache 2.0 | OVERIŤ | OVERIŤ | |

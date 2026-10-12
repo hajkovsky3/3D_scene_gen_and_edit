@@ -22,8 +22,11 @@ sfm:
   mapper: global            # global | incremental
   fallback_incremental_below: 0.8
   single_camera: true       # true pre video z jedného telefónu
-  align_up: floor_ransac    # camera_up | floor_ransac | colmap_aligner | none
-  use_gpu: true
+  align_up: floor_ransac    # camera_up | floor_ransac | none
+  use_gpu: true             # ignored by the CPU-only pycolmap wheel
+  max_num_features: 8192
+  min_registered: 10
+  keep_work: false
 
 # --- 02_reconstruction ---
 reconstruction:

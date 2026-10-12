@@ -15,22 +15,31 @@ pretože vzťahy v grafe scény (napr. *on*) potrebujú vedieť, kde je hore.
 - `00_ingest/frames.json`, `00_ingest/images/`
 
 **Výstup** (`01_sfm/`)
-- `sparse/` — rekonštrukcia v **COLMAP formáte** (`cameras.bin`, `images.bin`, `points3D.bin`),
-  už po undistorcii (model `PINHOLE`) a zarovnaní. Mnohé nástroje (gsplat, viewery) ju čítajú priamo.
+- `sparse/` — rekonštrukcia v **COLMAP formáte** (`cameras.bin`, `images.bin`, `points3D.bin`;
+  COLMAP 4 pridáva aj `rigs.bin`, `frames.bin`), už po undistorcii (model `PINHOLE`)
+  a zarovnaní. Mnohé nástroje (gsplat, viewery) ju čítajú priamo. Názov snímky v COLMAP je
+  `<frame_id>.jpg`.
 - `images_undistorted/<frame_id>.jpg` — snímky zodpovedajúce `PINHOLE` kamerám.
 - `cameras.json` — kamery v projektovom formáte (`docs/data-contracts.md`, sekcia 6).
   Toto je **primárne rozhranie** pre ďalšie fázy; COLMAP súbory sú pre kompatibilitu.
 - `points.npz` — `xyz: float32[P,3]`, `rgb: uint8[P,3]`, `error: float32[P]`, `track_len: int32[P]`.
 - `alignment.json` — `{"sim3_from_raw": 4×4 matica, "scale": s, "up_method": "...", "notes": ...}`.
-- `report.json` — počet registrovaných snímok, priemerná reprojekčná chyba, dĺžka trackov,
-  zoznam neregistrovaných `frame_id`.
+- `report.json` — `num_frames`, `num_registered`, `registered_ratio`, `num_points`,
+  `mean_reprojection_error_px`, `mean_track_length`, `unregistered` (zoznam `frame_id`),
+  `mapper` (ktorý mapper dal výsledok), `matcher`, `models` (počet snímok v každom nájdenom
+  modeli; berie sa najväčší), `warnings`.
 - `manifest.json`.
 
 ## Postup
 
 1. **Features**: SIFT (GPU) alebo ALIKED. Pre ťažšie scény ALIKED + LightGlue.
-2. **Matching**: pri videu `sequential_matcher` (s loop detection), pri fotkách `exhaustive_matcher`
-   (do ~300 snímok) alebo `vocab_tree_matcher`.
+   Kamera: ak `single_camera: true` a všetky snímky majú rovnaký rozmer aj `exif_focal_35mm`,
+   jedna spoločná kamera (model `SIMPLE_RADIAL`), inak COLMAP `AUTO`. Ak `frames.json` obsahuje `exif_focal_35mm`,
+   použije sa ako počiatočný odhad ohniska: `f_px = f35 * diag_px / 43.27`
+   (snímky z fázy 00 už EXIF nemajú).
+2. **Matching**: `auto` = `sequential` (overlap 10, kvadratický), ak sú všetky snímky
+   z jedného videa, inak `exhaustive`. Loop detection a `vocab_tree` potrebujú súbor
+   vocabulary tree (sťahuje sa), preto zatiaľ nie sú zapnuté.
 3. **Geometrická verifikácia**: odhad fundamentálnej / esenciálnej matice s RANSAC.
 4. **Mapping**: globálny mapper (GLOMAP integrovaný v COLMAP 4.x) je rýchlejší, inkrementálny
    je robustnejší. Default `global`, fallback `incremental`, ak sa zaregistruje < 80 % snímok.
@@ -38,18 +47,26 @@ pretože vzťahy v grafe scény (napr. *on*) potrebujú vedieť, kde je hore.
 6. **Undistorcia**: `image_undistorter` → `PINHOLE` kamery a nové snímky.
 7. **Zarovnanie**:
    - smer hore: priemer „up“ vektorov kamier (−y osi kamier, ľudia držia telefón zhruba vzpriamene)
-     ako počiatočný odhad, spresnený RANSAC fitom najväčšej roviny (podlaha) s normálou blízko
-     tohto odhadu; alternatívne `colmap model_orientation_aligner`;
-   - stred: medián pozícií kamier (alebo bodov) do počiatku;
-   - mierka: rozptyl pozícií kamier ≈ 1.
-   Výsledná sim(3) transformácia sa aplikuje na kamery aj body a uloží do `alignment.json`.
-8. Export `cameras.json`, `points.npz`, `report.json`.
+     ako počiatočný odhad (`camera_up`), spresnený RANSAC fitom najväčšej roviny (podlaha,
+     `floor_ransac`): normála do 25° od odhadu, ≥ 80 % kamier nad rovinou (vylúči strop
+     a stoly), prah vzdialenosti 1 % mediánovej vzdialenosti bodov od kamier, aspoň 5 % bodov
+     ako inliery. Ak sa rovina nenájde, fallback na `camera_up` (zapíše sa do `notes`).
+     `none` = bez rotácie (iba na ladenie, kontrola smeru hore sa vtedy preskočí).
+     `colmap_aligner` (`model_orientation_aligner`) pycolmap nesprístupňuje, zatiaľ
+     neimplementované;
+   - rotácia: najmenšia rotácia, ktorá zobrazí smer hore na +Z (natočenie okolo Z sa nerieši);
+   - stred: medián pozícií kamier do počiatku;
+   - mierka: RMS vzdialenosť kamier od ich mediánu = 1.
+   Výsledná sim(3) transformácia `x' = s R (x − c)` sa aplikuje na kamery aj body a uloží
+   do `alignment.json`.
+8. Export `cameras.json`, `points.npz`, `report.json`. Pomocné súbory (databáza, modely
+   pred undistorciou) sú v `01_sfm/_work/` a na konci sa zmažú (`keep_work: true` ich nechá).
 
 ## Implementácie
 
 | Názov | Popis | Licencia |
 |---|---|---|
-| `colmap` (primárna) | COLMAP 4.x cez `pycolmap` alebo CLI; SIFT/ALIKED, LightGlue, global/incremental mapper | BSD |
+| `colmap` (primárna) | COLMAP 4.x cez `pycolmap` (wheel z PyPI, iba CPU); zatiaľ SIFT, sequential/exhaustive, global/incremental mapper | BSD; wheel pribaľuje SuiteSparse (časti GPL/LGPL) — HRANIČNÉ, pozri `docs/licenses.md` |
 | `vggt` (alternatíva) | feed-forward VGGT, export do COLMAP formátu, voliteľný BA; vhodné pri málo snímkach | VGGT License; **iba checkpoint `VGGT-1B-Commercial`** (pôvodný je nekomerčný) — hraničné, pozri `docs/licenses.md` |
 
 Neodporúčané pre tento projekt kvôli licencii: MASt3R / DUSt3R (CC BY-NC-SA),
@@ -66,9 +83,15 @@ sfm:
   mapper: global            # global | incremental
   fallback_incremental_below: 0.8
   single_camera: true       # true pre video z jedného telefónu
-  align_up: floor_ransac    # camera_up | floor_ransac | colmap_aligner | none
-  use_gpu: true
+  align_up: floor_ransac    # camera_up | floor_ransac | none
+  use_gpu: true             # pycolmap z PyPI je iba CPU, ignoruje sa
+  max_num_features: 8192    # menej pre slabší HW
+  min_registered: 10
+  keep_work: false
 ```
+
+`aliked`, `lightglue` a `vocab_tree` potrebujú stiahnuť váhy alebo vocabulary tree.
+Kým ich autor neschváli, implementácia pri nich skončí chybou.
 
 ## Hardvér
 
@@ -77,7 +100,7 @@ minúty až desiatky minút. VGGT potrebuje GPU, pamäť rastie s počtom snímo
 
 ## Validácia výstupu
 
-- `cameras.json` má ≥ `min_registered` kamier, všetky matice 4×4, rotačná časť ortonormálna
+- `cameras.json` má ≥ `min_registered` kamier (default 10), všetky matice 4×4, rotačná časť ortonormálna
   (det ≈ 1), intrinsika kladná, `cx, cy` vo vnútri obrázka.
 - `points.npz` neprázdny, bez NaN.
 - Po zarovnaní: väčšina kamier má −y os kamery s kladnou zložkou Z (kontrola smeru hore).
@@ -100,12 +123,19 @@ Podiel registrovaných snímok, reprojekčná chyba, čas behu. Pri datasetoch s
 
 ## Stav
 
-- [ ] beh COLMAP (feature extraction, matching, global mapper)
-- [ ] fallback na inkrementálny mapper
-- [ ] undistorcia
-- [ ] zarovnanie (+Z hore, normalizácia)
-- [ ] export `cameras.json`, `points.npz`, `report.json`
-- [ ] kontraktový test
+Implementácia: `src/scenepipe/phases/p01_sfm/colmap.py` (+ `align.py`),
+test: `tests/contracts/test_p01.py` (syntetická miestnosť so známymi kamerami,
+`tests/contracts/synthetic_room.py`). Inštalácia: `pip install -e ".[dev,sfm]"`.
+
+- [x] beh COLMAP (SIFT, sequential/exhaustive matching, global mapper)
+- [x] fallback na inkrementálny mapper
+- [x] undistorcia
+- [x] zarovnanie (+Z hore, normalizácia)
+- [x] export `cameras.json`, `points.npz`, `report.json`
+- [x] kontraktový test (30 syntetických snímok: všetky zaregistrované, ohnisko ±3 %,
+  sklon kamier voči +Z ako v skutočnosti; ~11 s na CPU)
+- [ ] overenie na reálnej scéne (výstup fázy 00 z videa z telefónu)
+- [ ] ALIKED / LightGlue / vocab tree (čaká na schválenie stiahnutia váh)
 - [ ] (voliteľné) implementácia `vggt`
 
 ## Zdroje
