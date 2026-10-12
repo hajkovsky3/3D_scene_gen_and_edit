@@ -1,0 +1,27 @@
+# data a výstupy
+workspace/
+checkpoints/
+renders/
+*.ply
+*.npz
+*.npy
+*.mp4
+*.splat
+*.spz
+!tests/fixtures/**
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ide / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

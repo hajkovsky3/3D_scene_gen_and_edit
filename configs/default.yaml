@@ -1,0 +1,154 @@
+# Predvolená konfigurácia. Hodnoty a význam parametrov: phases/XX_*.md, sekcia Konfigurácia.
+# Zmena implementácie fázy: zmeň `impl`.
+
+# --- 00_ingest ---
+ingest:
+  impl: basic
+  video_fps: 3
+  sharpness_window: 5
+  sharpness_percentile_reject: 30
+  dedup_threshold: 0.97
+  max_side: 1600
+  max_frames: 300
+
+# --- 01_sfm ---
+sfm:
+  impl: colmap
+  features: sift            # sift | aliked
+  matcher: auto             # auto | sequential | exhaustive | vocab_tree
+  matcher_backend: default  # default | lightglue
+  mapper: global            # global | incremental
+  fallback_incremental_below: 0.8
+  single_camera: true       # true pre video z jedného telefónu
+  align_up: floor_ransac    # camera_up | floor_ransac | colmap_aligner | none
+  use_gpu: true
+
+# --- 02_reconstruction ---
+reconstruction:
+  impl: gsplat
+  iterations: 30000
+  sh_degree: 3
+  strategy: mcmc           # default | mcmc
+  cap_max: 1000000         # max gaussiánov pri mcmc
+  resolution_scale: 1.0    # 0.5 pre slabší HW
+  test_every: 8
+  antialiased: true
+  export_depth: false
+  seed: 0
+
+# --- 03_tagging ---
+tagging:
+  impl: ram_plus
+  sample_frames: 30
+  min_frames: 2
+  score_threshold: 0.6
+  keep_stuff_classes: true
+  blacklist_file: configs/tag_blacklist.txt
+  synonyms_file: configs/tag_synonyms.yaml
+
+# --- 04_segmentation ---
+segmentation:
+  impl: gdino_sam2
+  gdino_model: swint_ogc
+  sam2_model: sam2.1_hiera_large   # small/tiny pre slabší HW
+  box_threshold: 0.30
+  text_threshold: 0.25
+  vocab_batch: 20
+  tracking: true
+  redetect_every: 10
+  min_area_frac: 0.001
+  max_masks_per_frame: 100
+
+# --- 05_mask_embedding ---
+mask_embedding:
+  impl: openclip
+  model: ViT-H-14
+  pretrained: laion2b_s32b_b79k
+  crop_strategy: multi      # bbox | masked | multi
+  bbox_padding: 0.15
+  min_crop_px: 32
+  batch_size: 64
+  compute_label_scores: true
+
+# --- 06_lifting ---
+lifting:
+  impl: gsplat_vote
+  mask_batch: 32
+  min_weight: 0.01
+  merge_overlap: 0.3
+  merge_sim: 0.75
+  min_confidence: 0.5
+  min_coverage: 0.2
+  prefer_smaller_on_overlap: true
+  min_gaussians: 200
+  min_views: 3
+  outlier: dbscan          # dbscan | statistical | none
+
+# --- 07_scene_graph ---
+scene_graph:
+  impl: geometric_vlm
+  vlm: Qwen/Qwen2.5-VL-7B-Instruct
+  vlm_quantization: 4bit      # none | 8bit | 4bit
+  views_per_caption: 2
+  obb_mode: gravity_aligned   # gravity_aligned | full
+  obb_trim_percent: 1.5
+  on_eps_rel: 0.02
+  near_delta_rel: 0.05
+  semantic_relations: false
+
+# --- 08_prompt_parsing ---
+prompt_parsing:
+  impl: llm_local
+  model: Qwen/Qwen3-8B
+  backend: transformers       # transformers | vllm | llamacpp
+  quantization: 4bit
+  temperature: 0.0
+  max_retries: 1
+  include_scene_summary: true
+
+# --- 09_grounding ---
+grounding:
+  impl: clip_graph
+  w_clip: 1.0
+  w_label: 0.5
+  w_attr: 0.3
+  w_image: 1.0
+  ambiguity_margin: 0.05
+  reference_view: auto        # auto | <frame_id>
+
+# --- 10_asset_generation ---
+asset_generation:
+  impl: flux_trellis
+  t2i_model: black-forest-labs/FLUX.1-schnell
+  t2i_steps: 4
+  t2i_offload: true            # CPU offload pri malej VRAM
+  bg_removal: birefnet
+  i23d_model: microsoft/TRELLIS-image-large
+  seed: 0
+  num_candidates: 1            # >1 → vygenerovať viac a vybrať podľa CLIP zhody s promptom
+
+# --- 11_editing ---
+editing:
+  impl: router
+  inpainter: lama
+  hole_dilate_px: 15
+  inpaint_views: auto          # auto = pohľady, kde je diera > min_hole_frac
+  min_hole_frac: 0.002
+  refine_iters: 1500
+  refine_lr_scale: 0.5
+  recolor_keep_luminance: true
+  rotate_sh: true
+  harmonize_asset: false
+  insert_scale_heuristics: configs/category_sizes.yaml
+  max_ops: 5
+
+# --- 12_rendering ---
+rendering:
+  impl: gsplat_offline
+  cameras: test                # train | test | all | path:<súbor> | orbit
+  orbit_frames: 120
+  resolution_scale: 1.0
+  outputs: [rgb]               # rgb, depth, instances, overlay
+  compare_with: null           # napr. v000
+  fps: 30
+  background: [0, 0, 0]
