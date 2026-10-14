@@ -2,6 +2,9 @@
 
 Tento súbor číta Claude Code na začiatku každej session. Popisuje projekt, pravidlá a spôsob práce.
 
+> **Nový počítač:** ak v koreni repozitára existuje `SETUP_NEW_MACHINE.md`, pred akoukoľvek inou
+> prácou ho prečítaj a postupuj podľa neho (jednorazové nastavenie prostredia).
+
 ## O projekte
 
 Bakalárska práca (FMFI UK, Aplikovaná informatika, školiteľ doc. RNDr. Martin Madaras, PhD.):
