@@ -14,6 +14,8 @@ dev = ["pytest", "ruff"]
 # per-phase extras (each phase group may live in its own environment, see envs/README.md)
 ingest = ["opencv-python-headless", "pillow"]
 sfm = ["pycolmap>=4.2,<4.3", "pillow"]
+# torch/torchvision with CUDA: install from the PyTorch index first (envs/README.md)
+gs = ["torch", "torchvision", "gsplat>=1.5,<1.6", "torchmetrics", "pillow"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -3,13 +3,18 @@
 import json
 
 import numpy as np
-import pycolmap
 import pytest
 from PIL import Image
 from synthetic_room import build_room, orbit_cameras, render
 
+pycolmap = pytest.importorskip("pycolmap")  # environment sp-core
+
 from scenepipe.core.workspace import Workspace
-from scenepipe.phases.p01_sfm.align import compute_alignment, floor_plane, rotation_between
+from scenepipe.phases.p01_sfm.align import (
+    compute_alignment,
+    floor_plane,
+    rotation_between,
+)
 from scenepipe.phases.p01_sfm.colmap import SfmColmap
 
 W, H, F = 320, 240, 230.0

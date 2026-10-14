@@ -39,6 +39,8 @@ reconstruction:
   test_every: 8
   antialiased: true
   export_depth: false
+  lpips: true             # LPIPS(alex) v reporte, stiahne váhy AlexNet (~233 MB)
+  num_test_renders: 8      # koľko testovacích renderov uložiť na kontrolu
   seed: 0
 
 # --- 03_tagging ---

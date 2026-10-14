@@ -114,6 +114,22 @@ def render(rects: list[Rect], w2c: np.ndarray, width: int, height: int, f: float
     return np.clip(img, 0, 255).astype(np.uint8)
 
 
+def sample_points(rects: list[Rect], n: int, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
+    """Points spread over all surfaces (area-weighted) with their texture colors."""
+    rng = np.random.default_rng(seed)
+    areas = np.array([r.su * r.sv for r in rects])
+    counts = rng.multinomial(n, areas / areas.sum())
+    xyz, rgb = [], []
+    for rect, k in zip(rects, counts, strict=True):
+        a, b = rng.uniform(0, rect.su, k), rng.uniform(0, rect.sv, k)
+        xyz.append(rect.origin + a[:, None] * rect.u + b[:, None] * rect.v)
+        h, w = rect.texture.shape[:2]
+        iy = np.clip((b * PX_PER_M).astype(int), 0, h - 1)
+        ix = np.clip((a * PX_PER_M).astype(int), 0, w - 1)
+        rgb.append(rect.texture[iy, ix])
+    return np.concatenate(xyz).astype(np.float32), np.concatenate(rgb).astype(np.uint8)
+
+
 def orbit_cameras(n: int, radius: float = 1.7, height: float = 1.4) -> list[np.ndarray]:
     """Cameras on a circle looking at the room center slightly above the floor."""
     cams = []
