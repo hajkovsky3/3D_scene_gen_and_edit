@@ -127,7 +127,11 @@ Porovnanie na Mip-NeRF 360 scénach (room, counter, kitchen) s publikovanými č
 - [x] report s metrikami, testovacie rendery (`core/metrics.py`)
 - [x] voliteľný export hĺbky
 - [x] kontraktový test (`tests/contracts/test_p02.py`, syntetická miestnosť, preskočí sa bez CUDA)
-- [ ] overenie na reálnej scéne (Mip-NeRF 360 room/counter/kitchen) a porovnanie s 3DGS
+- [x] overenie na reálnej scéne Mip-NeRF 360 *room* (2026-10-15, GTX 1650): `mcmc`, 1 M gaussiánov,
+  30k krokov, 1556×1037 (`images_2`), 272 train / 39 test (každý 8.) → PSNR 32.94, SSIM 0.948,
+  LPIPS(alex) 0.116; 7 020 s tréning, špička VRAM 1,6 GB
+  (3DGS v článku: 30.63 / 0.914 / 0.220, ale LPIPS s VGG)
+- [ ] overenie na *counter* a *kitchen*, porovnanie s 3DGS s LPIPS(vgg)
 - [ ] orezanie floaterov mimo objemu kamier (pozri Riziká)
 - [ ] test kompatibility PLY so SuperSplat
 
