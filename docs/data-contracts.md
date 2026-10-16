@@ -18,6 +18,7 @@ workspace/<scene_id>/
 │       ├── prompt.json
 │       ├── 08_prompt_parsing/ 09_grounding/ 10_asset_generation/ 11_editing/
 │       └── (11 zapíše nový stav do state/v001)
+├── logs/                       výstup procesov fáz spustených z okna monitora (<fáza>.log)
 └── renders/
 ```
 
@@ -48,6 +49,37 @@ Každý výstupný adresár fázy obsahuje `manifest.json`:
 
 Manifest slúži na reprodukovateľnosť (do práce sa dá presne uviesť, čím vznikol výsledok)
 a na cache: ak sa hashe vstupov a konfigurácia nezmenili, fázu netreba púšťať znova.
+Na začiatku behu sa starý `manifest.json` zmaže, takže manifest existuje iba pri úspešne
+dokončenom behu.
+
+### Priebeh fázy (`progress.json`)
+
+Počas behu fáza priebežne prepisuje `progress.json` vo svojom adresári (rieši to `Phase.execute`
+a `core/progress.py`, implementácia fázy volá `self.progress.update()` / `self.progress.stage()`).
+Súbor slúži iba na sledovanie (okno monitora, `python -m scenepipe.monitor`), **nie je súčasťou
+kontraktu** a žiadna fáza ho nečíta.
+
+```json
+{
+  "phase": "02_reconstruction",
+  "impl": "gsplat",
+  "status": "running",
+  "stage": "tréning",
+  "fraction": 0.4123,
+  "message": "krok 12 351/30 000, N=1000000, loss 0.0431",
+  "started_at": "2026-10-16T18:57:02+00:00",
+  "updated_at": "2026-10-16T19:40:11+00:00",
+  "error": null
+}
+```
+
+- `status`: `running` | `done` | `failed` | `stopped`. Pri `failed` je v `error` typ a text
+  výnimky, pri `stopped` dôvod (Ctrl+C, SIGTERM, alebo „zastavené používateľom“, ak proces
+  ukončil monitor a súbor po ňom označil sám).
+- `fraction`: podiel celej fázy 0–1, monotónne rastie. `stage` je krátky názov kroku po slovensky.
+- Zápis je atomický (dočasný súbor + premenovanie), najviac približne raz za sekundu.
+- Fáza s dlhým krokom bez priebežného stavu (napr. mapping v COLMAP) aspoň nastaví `stage`.
+  Monitor ukáže fázu ako „bez aktualizácie“, ak sa `updated_at` nezmenil 10 min.
 
 ## 3. Identifikátory
 

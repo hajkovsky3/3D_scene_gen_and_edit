@@ -60,6 +60,13 @@ samostatný problém a dajú sa vylepšovať nezávisle.
    Počíta sa zvlášť pre každé video (rôzne kamery majú rôznu škálu). Fotky sa podľa
    ostrosti nefiltrujú, ak nie je `blur_filter_photos: true` (fotky sú zámerné zábery
    a percentilový prah by vždy zahodil ich pevný podiel).
+   **Medzery**: pri rýchlom otočení je rozmazaných veľa snímok za sebou a po ich vyradení
+   by vo videu ostala diera, ktorú SfM nepremostí. Preto sa rozmazaná snímka ponechá, ak by
+   ďalší kandidát toho istého videa bol od poslednej ponechanej snímky ďalej než
+   `blur_max_gap_s` (greedy, default 1 s; `0` vypne). Rozmazané snímky pred prvou a po
+   poslednej ostrej snímke videa sa neponechávajú, ani snímky s ostrosťou pod
+   `blur_gap_min_ratio` × medián ostrosti videa (default 0,3): takto rozmazané snímky SfM
+   umiestni zle a jediná vzdialená kamera pokazí normalizáciu celej scény (*izba*, pozri Stav).
 4. **Deduplikácia**: šedotónová miniatúra 64×64, normalizovaná korelácia (NCC)
    s poslednou ponechanou snímkou. Ak je `> dedup_threshold`, snímka je `duplicate`.
    Pomáha to SfM aj rýchlosti tréningu.
@@ -94,6 +101,8 @@ ingest:
   max_frames: 300
   min_frames: 20             # menej ponechaných snímok = chyba
   blur_filter_photos: false
+  blur_max_gap_s: 1.0        # 0 = vypnuté
+  blur_gap_min_ratio: 0.3    # dieru nevypĺňať snímkou pod 0,3 × medián ostrosti
 ```
 
 ## Hardvér
@@ -139,4 +148,13 @@ Inštalácia: `pip install -e ".[dev,ingest]"`.
 - [x] overenie na reálnej scéne *izba* (2026-10-16): video z telefónu na výšku, 100 s, 1080×1920
   s rotáciou v metadátach → 208 snímok 900×1600, 90 vyradených pre rozmazanie, 1 duplikát; 72 s
   na CPU. Pri rýchlych otočeniach vznikajú medzery až 6 s bez snímok.
+- [x] dopĺňanie medzier `blur_max_gap_s` (*izba*: 242 snímok, 56 vyradených, najdlhšia medzera
+  0,94 s namiesto 6,3 s). **Pozor:** prvá verzia bez `blur_gap_min_ratio` pustila aj veľmi
+  rozmazané snímky (ostrosť 37 pri mediáne ~350). 01 ich zaregistroval (224/242, 0,66 px),
+  ale 5 kamier bolo 50–100× ďalej než ostatné, normalizácia scénu zmrštila a 02 divergoval
+  (PSNR 9). Počet registrovaných kamier a reprojekčná chyba to neodhalia. Oprava: prah
+  `blur_gap_min_ratio` tu a vyradenie odľahlých kamier v 01 (`max_camera_dist_ratio`).
+  Po oprave (2026-10-16, `fast.yaml`): 225 snímok, 01 vyradil 10 odľahlých kamier → 211/225,
+  02 PSNR 22.27 / SSIM 0.860. Bez dopĺňania medzier (194 kamier) bolo PSNR 23.96, ale na inej
+  testovacej sade, takže prínos dopĺňania pre kvalitu zatiaľ nie je preukázaný.
 - [ ] doladenie prahov podľa úspešnosti registrácie v 01

@@ -43,6 +43,7 @@ Stav:
 | TRELLIS / TRELLIS.2 | 10 | MIT | MIT | OVERIŤ závislosti | nvdiffrast (NVIDIA, nekomerčná), rasterizéry odvodené od INRIA; ak sú tieto závislosti nutné, TRELLIS sa stáva `NEKOMERČNÉ` alternatívou a primárnou cestou 10 zostáva `primitive` / permisívny pipeline |
 | LaMa (big-lama) | 11 | Apache 2.0 | OVERIŤ | OVERIŤ | |
 | viser | 12 | Apache 2.0 | — | OK | |
+| CustomTkinter 5.2 (`customtkinter`) | monitor | MIT (repozitár; PyPI metadáta uvádzajú CC0 1.0) | — | OK | okno monitora behu; závislosti `darkdetect` (BSD-3), `packaging` (Apache 2.0 / BSD-2), Tk zo štandardnej knižnice Pythonu |
 | SuperSplat | 12 (externé) | MIT | — | OK | iba nástroj na prezeranie |
 | pycocotools | 04+ | BSD-2 | — | OK | |
 | NetworkX | 07 | BSD-3 | — | OK | |

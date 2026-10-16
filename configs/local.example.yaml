@@ -1,0 +1,21 @@
+# Kde beží ktorá fáza, keď ju spúšťa okno monitora (tlačidlo Spustiť).
+# Skopíruj na configs/local.yaml (je v .gitignore) a uprav pre svoj počítač.
+#
+# command: príkaz, ktorý spustí CLI `python -m scenepipe <args>`; zástupné hodnoty:
+#   {args}   argumenty CLI (samostatný prvok = vloží sa ako zoznam, v reťazci = shell-escaped)
+#   {python} Python, v ktorom beží monitor
+#   {phase}, {scene}
+# stop: voliteľný príkaz na zastavenie (napr. WSL: ukončenie wsl.exe nezastaví proces v Linuxe).
+# Bez tohto súboru bežia všetky fázy v aktuálnom Pythone.
+
+runners:
+  local:
+    command: ["{python}", "-m", "scenepipe", "{args}"]
+  wsl_gs:   # GPU fázy vo WSL (prostredie sp-gs, pozri envs/README.md)
+    command: ["wsl.exe", "-d", "Ubuntu", "--", "bash", "-lc",
+              "source ~/sp-gs.sh && python -m scenepipe {args}"]
+    stop: ["wsl.exe", "-d", "Ubuntu", "--", "pkill", "-f", "scenepipe run {phase} --scene {scene}"]
+
+phases:
+  default: local
+  02_reconstruction: wsl_gs

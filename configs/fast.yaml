@@ -1,0 +1,14 @@
+# Rýchly profil na vývoj a ladenie ďalších fáz. Prekrýva iba uvedené kľúče z default.yaml.
+# Finálne čísla do práce počítať s default.yaml.
+# Použitie: python -m scenepipe run <fáza> --scene <scéna> --profile fast (alebo v okne monitora)
+
+# --- 01_sfm ---
+sfm:
+  matcher: retrieval        # susedné snímky + podobné snímky namiesto všetkých dvojíc
+  max_num_features: 4096
+  sift_max_image_size: 1024
+
+# --- 02_reconstruction ---
+reconstruction:
+  iterations: 7000
+  cap_max: 500000

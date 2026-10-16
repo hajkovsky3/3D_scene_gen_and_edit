@@ -16,6 +16,7 @@ import numpy as np
 from PIL import Image, ImageCms, ImageOps
 
 from scenepipe.core.phase import ContractError, Phase, register
+from scenepipe.core.progress import StageProgress
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ class _Frame:
 class IngestBasic(Phase):
     phase = "00_ingest"
     impl = "basic"
-    impl_version = "1"
+    impl_version = "2"
     contract_version = 1
     defaults: ClassVar[dict[str, Any]] = {
         "video_fps": 3,
@@ -66,6 +67,8 @@ class IngestBasic(Phase):
         "max_frames": 300,
         "min_frames": 20,
         "blur_filter_photos": False,
+        "blur_max_gap_s": 1.0,
+        "blur_gap_min_ratio": 0.3,
     }
 
     @property
@@ -92,11 +95,16 @@ class IngestBasic(Phase):
         videos: list[_Frame] = []
         photos: list[_Frame] = []
 
-        for path in _list_inputs(self.input_dir):
+        files = _list_inputs(self.input_dir)
+        for n_file, path in enumerate(files):
             rel = self.ws.rel(path)
             ext = path.suffix.lower()
+            stage = self.progress.stage(
+                0.9 * n_file / len(files), 0.9 * (n_file + 1) / len(files), "načítanie vstupov"
+            )
+            stage.update(0.0, rel)
             if ext in VIDEO_EXTS:
-                frames = self._load_video(path, rel, stager)
+                frames = self._load_video(path, rel, stager, stage)
                 if frames is None:
                     rejected.append(_rej(rel, None, "unreadable"))
                 else:
@@ -114,10 +122,12 @@ class IngestBasic(Phase):
             photos.sort(key=lambda f: (f.exif_datetime, f.source))
         frames = videos + photos  # videos are already in path order, then time order
 
+        self.progress.update(0.9, "filtrovanie snímok", f"{len(frames)} kandidátov")
         frames = self._filter_blur(frames, rejected)
         frames = self._filter_duplicates(frames, rejected)
         frames = self._limit_count(frames, rejected)
 
+        self.progress.update(0.95, "zápis snímok", f"{len(frames)} snímok")
         images_dir.mkdir()
         entries = []
         for i, f in enumerate(frames, start=1):
@@ -157,7 +167,9 @@ class IngestBasic(Phase):
         log.info("00_ingest: %d frames kept, %d rejected", len(entries), len(rejected))
         return {"frames": frames_json, "images": images_dir}
 
-    def _load_video(self, path: Path, rel: str, stager: _Stager) -> list[_Frame] | None:
+    def _load_video(
+        self, path: Path, rel: str, stager: _Stager, stage: StageProgress
+    ) -> list[_Frame] | None:
         """Sample candidates at video_fps * window, keep the sharpest of each window."""
         cap = cv2.VideoCapture(str(path))
         if not cap.isOpened():
@@ -165,6 +177,7 @@ class IngestBasic(Phase):
         window = max(1, int(self.config["sharpness_window"]))
         rate = float(self.config["video_fps"]) * window  # candidate slots per second
         fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
 
         out: list[_Frame] = []
         best: tuple[float, np.ndarray, int, float] | None = None  # sharpness, rgb, idx, t
@@ -174,6 +187,8 @@ class IngestBasic(Phase):
         try:
             while cap.grab():
                 idx += 1
+                if total > 0 and idx % 30 == 0:
+                    stage.update(idx / total, f"{rel}: snímka {idx}/{total}")
                 pos_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
                 t = pos_ms / 1000.0 if (pos_ms > 0 or idx == 0 or fps <= 0) else idx / fps
                 slot = int(t * rate)
@@ -210,14 +225,50 @@ class IngestBasic(Phase):
                 continue
             groups.setdefault(f.group, []).append(f.sharpness)
         thresholds = {g: float(np.percentile(v, pct)) for g, v in groups.items()}
+        blurry = [f.group in thresholds and f.sharpness < thresholds[f.group] for f in frames]
+        self._fill_gaps(frames, blurry)
         kept = []
-        for f in frames:
-            if f.group in thresholds and f.sharpness < thresholds[f.group]:
+        for f, bad in zip(frames, blurry, strict=True):
+            if bad:
                 rejected.append(_rej(f.source, f.source_index, "blur"))
                 f.staged.unlink()
             else:
                 kept.append(f)
         return kept
+
+    def _fill_gaps(self, frames: list[_Frame], blurry: list[bool]) -> None:
+        """Greedily keep blurry video frames so that kept frames are <= blur_max_gap_s apart.
+
+        A blurry frame is kept when the next candidate of the same video is more than
+        blur_max_gap_s after the last kept frame. Blurry frames before the first and after
+        the last sharp frame of a video are not kept, nor frames below blur_gap_min_ratio
+        times the median sharpness of their video (those tend to be mislocalized by SfM).
+        """
+        max_gap = float(self.config["blur_max_gap_s"])
+        if max_gap <= 0:
+            return
+        min_ratio = float(self.config["blur_gap_min_ratio"])
+        groups: dict[str, list[float]] = {}
+        for f in frames:
+            groups.setdefault(f.group, []).append(f.sharpness)
+        floor = {g: min_ratio * float(np.median(v)) for g, v in groups.items()}
+        last_t: dict[str, float] = {}  # time of the last kept frame per video
+        for i, f in enumerate(frames):
+            if f.timestamp_s is None:
+                continue
+            if blurry[i]:
+                prev = last_t.get(f.group)
+                later = [
+                    (g, b) for g, b in zip(frames[i + 1 :], blurry[i + 1 :]) if g.group == f.group
+                ]
+                if prev is None or not any(not b for _, b in later):
+                    continue  # before the first / after the last sharp frame: stays rejected
+                if later[0][0].timestamp_s - prev <= max_gap:
+                    continue  # the next candidate still closes the gap
+                if f.sharpness < floor[f.group]:
+                    continue  # too blurry even to fill a gap (would be mislocalized in 01)
+                blurry[i] = False
+            last_t[f.group] = f.timestamp_s
 
     def _filter_duplicates(self, frames: list[_Frame], rejected: list[dict]) -> list[_Frame]:
         thr = float(self.config["dedup_threshold"])

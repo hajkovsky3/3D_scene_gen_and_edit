@@ -14,20 +14,22 @@ from PIL import Image
 
 from scenepipe.core.phase import ContractError, Phase, register
 from scenepipe.phases.p01_sfm.align import compute_alignment
+from scenepipe.phases.p01_sfm.retrieval import bow_similarity, select_pairs
 
 log = logging.getLogger(__name__)
 
-VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".avi"}
 JPEG_QUALITY = 95
 MAX_MEAN_REPROJ_PX = 2.0
 DIAG_35MM = 43.27  # diagonal of a 36x24 mm frame
+MATCH_CHUNKS = 20  # matching is split into ~this many calls for progress reporting
+MIN_MATCH_CHUNK = 100
 
 
 @register
 class SfmColmap(Phase):
     phase = "01_sfm"
     impl = "colmap"
-    impl_version = "1"
+    impl_version = "2"
     contract_version = 1
     defaults: ClassVar[dict[str, Any]] = {
         "features": "sift",
@@ -39,6 +41,13 @@ class SfmColmap(Phase):
         "align_up": "floor_ransac",
         "use_gpu": True,
         "max_num_features": 8192,
+        "sift_max_image_size": -1,
+        "sequential_overlap": 10,
+        "retrieval_num_neighbors": 10,
+        "retrieval_num_words": 1024,
+        "retrieval_sample": 100_000,
+        "auto_exhaustive_max": 100,
+        "max_camera_dist_ratio": 5.0,
         "min_registered": 10,
         "keep_work": False,
         "num_threads": -1,
@@ -67,6 +76,7 @@ class SfmColmap(Phase):
         db = work / "database.db"
 
         # 1. features
+        self.progress.update(0.0, "extrakcia príznakov", f"SIFT, {len(names)} snímok")
         single = self._single_camera(frames)
         reader = pycolmap.ImageReaderOptions()
         reader.camera_model = "SIMPLE_RADIAL"
@@ -77,6 +87,8 @@ class SfmColmap(Phase):
         extraction = pycolmap.FeatureExtractionOptions()
         extraction.num_threads = int(cfg["num_threads"])
         extraction.sift.max_num_features = int(cfg["max_num_features"])
+        if int(cfg["sift_max_image_size"]) > 0:
+            extraction.max_image_size = int(cfg["sift_max_image_size"])
         pycolmap.extract_features(
             db,
             images_dir,
@@ -91,18 +103,25 @@ class SfmColmap(Phase):
         matcher = self._matcher(frames)
         matching = pycolmap.FeatureMatchingOptions()
         matching.num_threads = int(cfg["num_threads"])
+        self.progress.update(0.08, "výber dvojíc", matcher)
         if matcher == "sequential":
+            self.progress.update(0.1, "párovanie", "sequential (bez priebežného stavu)")
             pairing = pycolmap.SequentialPairingOptions()
-            pairing.overlap = 10
+            pairing.overlap = int(cfg["sequential_overlap"])
             pairing.quadratic_overlap = True
             pairing.loop_detection = False
             pycolmap.match_sequential(
                 db, matching_options=matching, pairing_options=pairing, device=pycolmap.Device.cpu
             )
         else:
-            pycolmap.match_exhaustive(db, matching_options=matching, device=pycolmap.Device.cpu)
+            if matcher == "retrieval":
+                pairs = self._retrieval_pairs(db, names)
+            else:
+                pairs = [(i, j) for i in range(len(names)) for j in range(i + 1, len(names))]
+            self._match_pairs(db, names, pairs, matching, work)
 
         # 4.-5. mapping (+ bundle adjustment)
+        self.progress.update(0.85, "mapping", f"{cfg['mapper']} mapper")
         models: dict[str, list[pycolmap.Reconstruction]] = {}
         if cfg["mapper"] == "global":
             models["global"] = self._map_global(db, images_dir, work / "global")
@@ -111,15 +130,18 @@ class SfmColmap(Phase):
         if cfg["mapper"] == "incremental" or ratio < float(cfg["fallback_incremental_below"]):
             if cfg["mapper"] == "global":
                 log.info("global mapper registered %.0f%%, trying incremental", 100 * ratio)
+                self.progress.update(0.9, "mapping", "incremental mapper (fallback)")
             models["incremental"] = self._map_incremental(db, images_dir, work / "incremental")
             best_mapper, best = _largest(models)
         if best is None:
             raise RuntimeError("01_sfm: COLMAP did not produce any reconstruction")
+        removed = self._remove_outlier_cameras(best)
         raw = work / "raw"
         raw.mkdir()
         best.write_binary(raw)
 
         # 6. undistortion -> PINHOLE cameras + new images
+        self.progress.update(0.95, "undistorcia", f"{best.num_reg_images()} kamier")
         undist = work / "undistorted"
         pycolmap.undistort_images(
             undist, raw, images_dir, output_type="COLMAP", jpeg_quality=JPEG_QUALITY
@@ -127,6 +149,7 @@ class SfmColmap(Phase):
         recon = pycolmap.Reconstruction(undist / "sparse")
 
         # 7. alignment (+Z up, centered, unit RMS camera spread)
+        self.progress.update(0.98, "zarovnanie a export")
         image_ids = sorted(recon.reg_image_ids(), key=lambda i: recon.image(i).name)
         rots = np.stack([_cam_from_world(recon.image(i))[:3, :3] for i in image_ids])
         centers = np.stack([recon.image(i).projection_center() for i in image_ids])
@@ -152,7 +175,7 @@ class SfmColmap(Phase):
             "points": self._write_points(recon),
             "alignment": self._write_json("alignment.json", alignment.to_json()),
         }
-        report = self._report(recon, frames, models, best_mapper, matcher, single)
+        report = self._report(recon, frames, models, best_mapper, matcher, single, removed)
         outs["report"] = self._write_json("report.json", report)
 
         if not cfg["keep_work"]:
@@ -166,7 +189,7 @@ class SfmColmap(Phase):
                 "01_sfm/colmap: only features=sift with matcher_backend=default; ALIKED and "
                 "LightGlue need model downloads that are not approved yet (phases/01_sfm.md)"
             )
-        if cfg["matcher"] not in ("auto", "sequential", "exhaustive"):
+        if cfg["matcher"] not in ("auto", "sequential", "exhaustive", "retrieval"):
             raise NotImplementedError(f"01_sfm/colmap: matcher {cfg['matcher']!r} not supported")
         if cfg["mapper"] not in ("global", "incremental"):
             raise ValueError(f"unknown mapper {cfg['mapper']!r}")
@@ -181,9 +204,58 @@ class SfmColmap(Phase):
         m = self.config["matcher"]
         if m != "auto":
             return m
-        sources = {f["source"] for f in frames}
-        one_video = len(sources) == 1 and Path(next(iter(sources))).suffix.lower() in VIDEO_EXTS
-        return "sequential" if one_video else "exhaustive"
+        if len(frames) <= int(self.config["auto_exhaustive_max"]):
+            return "exhaustive"
+        return "retrieval"
+
+    def _retrieval_pairs(self, db_path: Path, names: list[str]) -> list[tuple[int, int]]:
+        """Pairs (indices into names) for the `retrieval` matcher; frames in frame_id order."""
+        cfg = self.config
+        db = pycolmap.Database.open(db_path)
+        try:
+            ids = {img.name: img.image_id for img in db.read_all_images()}
+            descs = [np.asarray(db.read_descriptors(ids[n]).data) for n in names]
+        finally:
+            db.close()
+        sim = None
+        if int(cfg["retrieval_num_neighbors"]) > 0:
+            sim = bow_similarity(
+                descs,
+                int(cfg["retrieval_num_words"]),
+                int(cfg["retrieval_sample"]),
+                seed=int(cfg["seed"]),
+            )
+        pairs = select_pairs(
+            sim, len(names), int(cfg["sequential_overlap"]), int(cfg["retrieval_num_neighbors"])
+        )
+        total = len(names) * (len(names) - 1) // 2
+        log.info("retrieval matcher: %d pairs (exhaustive would be %d)", len(pairs), total)
+        return pairs
+
+    def _match_pairs(
+        self,
+        db: Path,
+        names: list[str],
+        pairs: list[tuple[int, int]],
+        matching: pycolmap.FeatureMatchingOptions,
+        work: Path,
+    ) -> None:
+        """Match + verify the given pairs in chunks, so that progress can be reported."""
+        stage = self.progress.stage(0.1, 0.85, "párovanie")
+        chunk = max(len(pairs) // MATCH_CHUNKS, MIN_MATCH_CHUNK)
+        pairs_file = work / "pairs.txt"
+        pairing = pycolmap.ImportedPairingOptions()
+        pairing.match_list_path = pairs_file
+        for start in range(0, len(pairs), chunk):
+            stage.update(start / len(pairs), f"dvojica {start} z {len(pairs)}")
+            part = pairs[start : start + chunk]
+            pairs_file.write_text(
+                "".join(f"{names[i]} {names[j]}\n" for i, j in part), encoding="utf-8"
+            )
+            pycolmap.match_image_pairs(
+                db, matching_options=matching, pairing_options=pairing, device=pycolmap.Device.cpu
+            )
+        stage.update(1.0, f"{len(pairs)} dvojíc")
 
     def _map_global(self, db: Path, images: Path, out: Path) -> list[pycolmap.Reconstruction]:
         out.mkdir()
@@ -250,11 +322,39 @@ class SfmColmap(Phase):
         )
         return path
 
-    def _report(self, recon, frames, models, mapper, matcher, single) -> dict[str, Any]:
+    def _remove_outlier_cameras(self, recon: pycolmap.Reconstruction) -> list[str]:
+        """De-register cameras far away from all others (mislocalized, e.g. blurry frames).
+
+        A camera is an outlier if its distance from the median camera center is more than
+        `max_camera_dist_ratio` times the median of these distances. Such cameras would
+        dominate the normalization (step 7) and the scene scale in phase 02.
+        """
+        ratio = float(self.config["max_camera_dist_ratio"])
+        ids = list(recon.reg_image_ids())
+        if ratio <= 0 or len(ids) < 5:
+            return []
+        centers = np.stack([recon.image(i).projection_center() for i in ids])
+        d = np.linalg.norm(centers - np.median(centers, axis=0), axis=1)
+        limit = ratio * float(np.median(d))
+        removed = []
+        for i, di in zip(ids, d, strict=True):
+            if di > limit:
+                img = recon.image(i)
+                removed.append(Path(img.name).stem)
+                recon.deregister_frame(img.frame_id)
+        if removed:
+            log.warning("01_sfm: removed %d outlier cameras: %s", len(removed), removed)
+        return sorted(removed)
+
+    def _report(self, recon, frames, models, mapper, matcher, single, removed) -> dict[str, Any]:
         registered = {Path(recon.image(i).name).stem for i in recon.reg_image_ids()}
         n_reg = len(registered)
         err = float(recon.compute_mean_reprojection_error())
         warnings = []
+        if removed:
+            warnings.append(
+                f"removed {len(removed)} outlier cameras far from all others: {removed}"
+            )
         if err > MAX_MEAN_REPROJ_PX:
             warnings.append(f"mean reprojection error {err:.2f} px > {MAX_MEAN_REPROJ_PX} px")
         return {

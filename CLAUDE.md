@@ -33,6 +33,8 @@ Každá fáza je samostatný modul s jasným kontraktom **vstupné súbory → v
    kontraktovými testami. Implementácia sa vyberá v `configs/default.yaml` alebo cez CLI.
 4. **Každá fáza zapíše `manifest.json`** do svojho výstupného adresára (pozri `core/phase.py`):
    názov fázy, implementácia, verzia, konfigurácia, vstupy s hashmi, výstupy, čas behu, git commit.
+   Počas behu hlási priebeh cez `self.progress` (súbor `progress.json`, pozri
+   `docs/data-contracts.md`); dlhé kroky majú hlásiť percentá, aby ich ukázal monitor.
 5. **Každá fáza validuje svoj výstup** metódou `validate_outputs()` ešte pred zápisom manifestu.
 6. Fázy môžu bežať v **rôznych Python prostrediach** (konfliktné závislosti: SAM, gsplat, TRELLIS,
    VLM). Preto žiadne zdieľanie objektov v pamäti medzi fázami, iba súbory.
@@ -110,12 +112,14 @@ potichu zmenil kontrakt alebo pridal ťažkú závislosť.
 ## Príkazy
 
 ```bash
-# spustenie jednej fázy (CLI zatiaľ nie je implementované, cieľový tvar):
-python -m scenepipe run 01_sfm --scene room --impl colmap
-# celý build:
+# spustenie jednej fázy (config: default.yaml + voliteľný profil + --set kľúč=hodnota):
+python -m scenepipe run 01_sfm --scene room --profile fast --set max_num_features=2048
+# celý build a úprava (zatiaľ nie je implementované, cieľový tvar):
 python -m scenepipe build --scene room
-# jedna úprava:
 python -m scenepipe edit --scene room --prompt "zmeň farbu gauča na modrú"
+# okno monitora: výber vstupu, spustenie buildu, graf fáz a priebeh (extra "monitor");
+# ktorá fáza beží v ktorom prostredí: configs/local.yaml (vzor configs/local.example.yaml)
+python run_monitor.py          # alebo: python -m scenepipe.monitor --scene room
 # testy a lint:
 pytest tests/
 ruff check src tests && ruff format src tests
@@ -128,7 +132,10 @@ Vývojový počítač je slabší, prístup k výkonnejšej GPU sa ešte rieši.
 - každá fáza musí mať parameter na zníženie nárokov (rozlíšenie, počet snímok, veľkosť modelu),
 - ťažké fázy (02, 04, 07 captioning, 08, 10, 11) písať tak, aby sa dali spustiť samostatne
   na inom stroji: stačí skopírovať vstupné súbory a výstupy vrátiť späť,
-- odhadované nároky na VRAM sú v každom `phases/XX_*.md`.
+- odhadované nároky na VRAM sú v každom `phases/XX_*.md`,
+- `configs/fast.yaml` je rýchly profil na vývoj (prekrýva len niektoré kľúče z `default.yaml`):
+  pri ladení ďalších fáz používať ten, finálne čísla do práce počítať s `default.yaml`.
+  Každá nová fáza s dlhým behom doň pridá svoje zrýchlené nastavenie.
 
 ## Čo nerobiť
 

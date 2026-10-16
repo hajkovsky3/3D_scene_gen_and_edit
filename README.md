@@ -110,7 +110,7 @@ phases/         špecifikácia každej fázy (zdroj pravdy pre vstupy a výstupy
 docs/           dátové kontrakty, licencie, evaluácia
 configs/        konfigurácia fáz
 envs/           Python prostredia podľa skupín fáz
-src/scenepipe/  kód: core/ (spoločné jadro) a phases/ (jeden balík na fázu)
+src/scenepipe/  kód: core/ (spoločné jadro), phases/ (jeden balík na fázu), monitor/ (sledovanie behu)
 tests/          kontraktové a jednotkové testy
 ```
 
@@ -123,6 +123,31 @@ prostrediach podľa skupín ([`envs/README.md`](envs/README.md)). Spoločné jad
 pip install -e ".[dev]"
 pytest
 ```
+
+## Sledovanie behu
+
+```bash
+pip install -e ".[monitor]"                  # CustomTkinter
+python run_monitor.py                        # alebo dvojklik na run_monitor.py v koreni projektu
+```
+
+Okno má tri časti:
+
+- **vľavo** zoznam vstupov (scény vo `workspace/` s ich videami a fotkami), tlačidlo
+  „+ Nový vstup…“ (vyberieš video alebo fotky, zadáš názov scény, súbory sa skopírujú do
+  `workspace/<scéna>/input/`), výber profilu (plný / rýchly), fázy, od ktorej sa začne,
+  a tlačidlá **Spustiť** / **Zastaviť**. Spustenie pustí za sebou všetky implementované
+  build fázy ako samostatné procesy; výstup každej je v `workspace/<scéna>/logs/<fáza>.log`,
+- **v strede** graf fáz (bežiaca fáza je zvýraznená, kliknutie na uzol ukáže jej riadok),
+- **vpravo** priebeh každej fázy (percentá, krok, uplynulý čas, odhad konca, hlavné čísla
+  z reportu).
+
+Ktorá fáza beží v ktorom Python prostredí (napr. 02 vo WSL), je v `configs/local.yaml`
+(necommituje sa; vzor `configs/local.example.yaml`). Bez neho bežia všetky fázy v aktuálnom
+Pythone. Priebeh sa číta zo súborov `progress.json`, `manifest.json` a `report.json`, takže
+okno ukazuje aj fázy spustené inak (z príkazového riadka, na inom stroji so zdieľaným diskom).
+
+Jednu fázu spustíš aj bez okna: `python -m scenepipe run 02_reconstruction --scene izba --profile fast`.
 
 ## Ďalšie dokumenty
 

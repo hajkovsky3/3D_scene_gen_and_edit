@@ -37,13 +37,32 @@ pretože vzťahy v grafe scény (napr. *on*) potrebujú vedieť, kde je hore.
    jedna spoločná kamera (model `SIMPLE_RADIAL`), inak COLMAP `AUTO`. Ak `frames.json` obsahuje `exif_focal_35mm`,
    použije sa ako počiatočný odhad ohniska: `f_px = f35 * diag_px / 43.27`
    (snímky z fázy 00 už EXIF nemajú).
-2. **Matching**: `auto` = `sequential` (overlap 10, kvadratický), ak sú všetky snímky
-   z jedného videa, inak `exhaustive`. Loop detection a `vocab_tree` potrebujú súbor
-   vocabulary tree (sťahuje sa), preto zatiaľ nie sú zapnuté.
+2. **Matching** (výber dvojíc snímok na párovanie):
+   - `exhaustive`: všetky dvojice, O(n²); spoľahlivé, ale pri 200 snímkach na CPU ~1 h.
+   - `sequential`: každá snímka s nasledujúcimi `sequential_overlap` snímkami + kvadratické
+     posuny (2^k). Bez loop detection; na videu s medzerami sa scéna rozpadne (*izba*: 40 %).
+   - `retrieval`: okno a kvadratické posuny ako `sequential` + pre každú snímku
+     `retrieval_num_neighbors` najpodobnejších snímok mimo okna (uzavretie slučiek).
+     Podobnosť: bag-of-words nad SIFT deskriptormi samotnej scény (RootSIFT, k-means
+     s `retrieval_num_words` slovami na `retrieval_sample` deskriptoroch, tf-idf, kosínus),
+     vlastný kód v numpy, nič sa nesťahuje. Dvojice sa zapíšu do `_work/pairs.txt`
+     a párujú cez `match_image_pairs`. Počet dvojíc rastie lineárne (~25 na snímku).
+   - `auto`: `exhaustive` pri ≤ `auto_exhaustive_max` snímkach (default 100), inak `retrieval`.
+   - `vocab_tree` a loop detection v COLMAP potrebujú stiahnuť vocabulary tree, zatiaľ nie sú zapnuté.
+
+   `exhaustive` a `retrieval` sa párujú po dávkach (~20 volaní `match_image_pairs` so zoznamom
+   dvojíc), aby sa dal hlásiť priebeh; výsledok je rovnaký ako pri jednom volaní.
+
+   `sift_max_image_size` zmenší obrázok pred extrakciou SIFT (rýchlejšia extrakcia aj párovanie,
+   výstupné snímky a kamery sú v pôvodnom rozlíšení).
 3. **Geometrická verifikácia**: odhad fundamentálnej / esenciálnej matice s RANSAC.
 4. **Mapping**: globálny mapper (GLOMAP integrovaný v COLMAP 4.x) je rýchlejší, inkrementálny
    je robustnejší. Default `global`, fallback `incremental`, ak sa zaregistruje < 80 % snímok.
-5. **Bundle adjustment** (súčasť mappingu).
+5. **Bundle adjustment** (súčasť mappingu). Potom sa z najväčšieho modelu vyradia **odľahlé
+   kamery**: vzdialenosť od mediánu stredov kamier > `max_camera_dist_ratio` × medián týchto
+   vzdialeností (default 5; `0` vypne). Sú to zle umiestnené snímky (typicky rozmazané pri
+   rýchlom otočení); inak by ovládli normalizáciu v kroku 7 aj mierku scény vo fáze 02.
+   Vyradené snímky sú v `unregistered` a vo `warnings`.
 6. **Undistorcia**: `image_undistorter` → `PINHOLE` kamery a nové snímky.
 7. **Zarovnanie**:
    - smer hore: priemer „up“ vektorov kamier (−y osi kamier, ľudia držia telefón zhruba vzpriamene)
@@ -79,7 +98,7 @@ MASt3R / DUSt3R (CC BY-NC-SA; vhodné pri málo snímkach), pôvodný checkpoint
 sfm:
   impl: colmap
   features: sift            # sift | aliked
-  matcher: auto             # auto | sequential | exhaustive | vocab_tree
+  matcher: auto             # auto | sequential | exhaustive | retrieval | vocab_tree
   matcher_backend: default  # default | lightglue
   mapper: global            # global | incremental
   fallback_incremental_below: 0.8
@@ -87,6 +106,13 @@ sfm:
   align_up: floor_ransac    # camera_up | floor_ransac | none
   use_gpu: true             # pycolmap z PyPI je iba CPU, ignoruje sa
   max_num_features: 8192    # menej pre slabší HW
+  sift_max_image_size: -1   # -1 = COLMAP default (3200)
+  sequential_overlap: 10
+  retrieval_num_neighbors: 10
+  retrieval_num_words: 1024
+  retrieval_sample: 100000
+  auto_exhaustive_max: 100
+  max_camera_dist_ratio: 5.0  # vyradiť kamery ďalej než 5 × medián vzdialenosti; 0 = vypnuté
   min_registered: 10
   keep_work: false
 ```
@@ -139,8 +165,11 @@ test: `tests/contracts/test_p01.py` (syntetická miestnosť so známymi kamerami
   `sequential` → 83/208 (40 %), 7 modelov (medzery po rýchlych otočeniach, bez loop detection);
   `exhaustive` → 186/208 (89 %), 30 823 bodov, reprojekčná chyba 0,61 px; ~75 min na CPU
   (takmer všetko párovanie)
-- [ ] `matcher: auto` volí pri videu `sequential`, čo na *izba* zlyhalo — zvážiť `exhaustive`
-  pri malom počte snímok alebo loop detection
+- [x] matcher `retrieval` (okno + bag-of-words vyhľadanie podobných snímok), `auto` ho volí
+  nad 100 snímok namiesto `sequential`. *izba* s `configs/fast.yaml` (4 096 SIFT bodov,
+  1 024 px): 4 156 dvojíc namiesto 21 528, 194/208 registrovaných (93 %), 0,66 px, **5 min**
+  namiesto 75 min s `exhaustive`. (Beh s dopĺňaním medzier v 00 hlásil 224/242, ale bol
+  degenerovaný kvôli 5 odľahlým kamerám, pozri `phases/00_ingest.md`, Stav.)
 - [ ] ALIKED / LightGlue / vocab tree (čaká na schválenie stiahnutia váh)
 - [ ] (voliteľné) implementácia `vggt`
 

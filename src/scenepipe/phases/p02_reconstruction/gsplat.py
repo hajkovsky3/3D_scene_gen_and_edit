@@ -34,6 +34,8 @@ SH_DEGREE_INTERVAL = 1000
 JPEG_QUALITY = 95
 PSNR_CONSISTENCY_DB = 0.05
 MIN_REFINE_EVERY = 10  # keeps densification sane for short (test) runs
+TRAIN_END = 0.95  # share of the phase progress taken by training
+PROGRESS_EVERY = 50  # steps between progress updates (writes are throttled anyway)
 
 
 @register
@@ -82,6 +84,7 @@ class ReconstructionGsplat(Phase):
         train, test = split_views(cams, int(cfg["test_every"]))
         if not train:
             raise ValueError("02_reconstruction: no training views")
+        self.progress.update(0.0, "načítanie snímok", f"{len(cams)} kamier")
         images = {c.frame_id: self._load_image(c) for c in cams}
         scaled = {}  # cameras at the training resolution
         for c in cams:
@@ -95,6 +98,7 @@ class ReconstructionGsplat(Phase):
         self._train(params, train_s, images, scene_scale)
         train_time = time.perf_counter() - t0
 
+        self.progress.update(TRAIN_END, "export PLY", f"{len(params['means'])} gaussiánov")
         g = from_params(params)
         ply = self.out_dir / "gaussians.ply"
         write_ply(ply, g)
@@ -203,6 +207,12 @@ class ReconstructionGsplat(Phase):
             else:
                 lr = means_sched.get_last_lr()[0]
                 strategy.step_post_backward(params, optimizers, state, step, info, lr=lr)
+            if step % PROGRESS_EVERY == 0:
+                self.progress.update(
+                    TRAIN_END * (step + 1) / iters,
+                    "tréning",
+                    f"krok {step + 1}/{iters}, N={len(params['means'])}, loss {loss.item():.4f}",
+                )
             if step % log_every == 0 or step == iters - 1:
                 log.info(
                     "step %d/%d loss %.4f N=%d", step + 1, iters, loss.item(), len(params["means"])
@@ -240,7 +250,9 @@ class ReconstructionGsplat(Phase):
         n_save = int(cfg["num_test_renders"])
         save = set(np.linspace(0, len(test) - 1, min(n_save, len(test))).round().astype(int))
         per_view = []
+        stage = self.progress.stage(TRAIN_END + 0.01, 1.0, "vyhodnotenie")
         for i, cam in enumerate(test):
+            stage.update(i / len(test), f"testovací pohľad {i + 1}/{len(test)}")
             gt = images[cam.frame_id].cuda().float()[None] / 255
             rgb = self._render_eval(params, cam)
             per_view.append(

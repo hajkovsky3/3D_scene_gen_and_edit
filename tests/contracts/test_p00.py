@@ -1,5 +1,6 @@
 """Contract tests for phase 00_ingest (format of outputs, not quality)."""
 
+import itertools
 import json
 
 import cv2
@@ -9,7 +10,7 @@ from PIL import Image
 
 from scenepipe.core.phase import ContractError
 from scenepipe.core.workspace import Workspace
-from scenepipe.phases.p00_ingest.basic import REJECT_REASONS, IngestBasic
+from scenepipe.phases.p00_ingest.basic import REJECT_REASONS, IngestBasic, _Frame
 
 W, H = 640, 480
 
@@ -127,6 +128,26 @@ def test_video(tmp_path, texture):
     assert any(r["reason"] == "blur" for r in data["rejected"])
 
 
+def test_blur_gap_filling(tmp_path):
+    """A long blurry stretch keeps a frame every <= blur_max_gap_s, none at the ends."""
+    phase = IngestBasic(make_ws(tmp_path), {"blur_max_gap_s": 1.0})
+    ts = [round(0.25 * i, 2) for i in range(41)]  # 0 .. 10 s
+    frames = [
+        _Frame("input/v.mp4", i, t, tmp_path / f"{i}.jpg", W, H, 1.0, np.zeros(1), "input/v.mp4")
+        for i, t in enumerate(ts)
+    ]
+    blurry = [t < 1 or 3 <= t <= 7 or t > 9 for t in ts]
+    phase._fill_gaps(frames, blurry)
+    kept = [t for t, b in zip(ts, blurry) if not b]
+    assert kept[0] == 1.0 and kept[-1] == 9.0  # leading/trailing blur stays rejected
+    assert max(b - a for a, b in itertools.pairwise(kept)) <= 1.0
+    assert sum(3 <= t <= 7 for t in kept) <= 5  # only sparse fill inside the stretch
+
+    off = [t < 1 or 3 <= t <= 7 or t > 9 for t in ts]
+    IngestBasic(make_ws(tmp_path / "off"), {"blur_max_gap_s": 0})._fill_gaps(frames, off)
+    assert off == [t < 1 or 3 <= t <= 7 or t > 9 for t in ts]
+
+
 def test_max_frames(tmp_path, texture):
     ws = make_ws(tmp_path)
     for i in range(10):
@@ -152,3 +173,17 @@ def test_missing_input(tmp_path):
     ws = make_ws(tmp_path)
     with pytest.raises(FileNotFoundError):
         IngestBasic(ws, {}).execute()
+
+
+def test_blur_gap_filling_skips_very_blurry(tmp_path):
+    """Frames far below the median sharpness never fill a gap (SfM would mislocalize them)."""
+    phase = IngestBasic(make_ws(tmp_path), {"blur_max_gap_s": 1.0, "blur_gap_min_ratio": 0.3})
+    ts = [round(0.25 * i, 2) for i in range(41)]
+    sharp = [0.1 if 3 <= t <= 7 else 1.0 for t in ts]  # the stretch is hopelessly blurry
+    frames = [
+        _Frame("input/v.mp4", i, t, tmp_path / f"{i}.jpg", W, H, s, np.zeros(1), "input/v.mp4")
+        for i, (t, s) in enumerate(zip(ts, sharp, strict=True))
+    ]
+    blurry = [3 <= t <= 7 for t in ts]
+    phase._fill_gaps(frames, blurry)
+    assert blurry == [3 <= t <= 7 for t in ts]  # nothing re-admitted

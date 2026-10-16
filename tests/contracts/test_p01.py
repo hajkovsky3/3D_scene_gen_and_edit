@@ -16,6 +16,7 @@ from scenepipe.phases.p01_sfm.align import (
     rotation_between,
 )
 from scenepipe.phases.p01_sfm.colmap import SfmColmap
+from scenepipe.phases.p01_sfm.retrieval import bow_similarity, select_pairs
 
 W, H, F = 320, 240, 230.0
 
@@ -52,7 +53,9 @@ def video_run(tmp_path_factory):
     ws = Workspace.open(tmp_path_factory.mktemp("p01"), "room")
     gt = orbit_cameras(30)
     make_ingest(ws, gt, source="input/room.mp4")
-    SfmColmap(ws, {"max_num_features": 2048}).execute()
+    # small window so that the retrieval pairs are needed to close the orbit
+    cfg = {"max_num_features": 2048, "matcher": "retrieval", "sequential_overlap": 3}
+    SfmColmap(ws, {**cfg, "retrieval_num_neighbors": 3, "retrieval_num_words": 256}).execute()
     return ws, gt
 
 
@@ -100,7 +103,7 @@ def test_outputs_format(video_run):
     assert alignment["up_method"] == "floor_ransac"
 
     report = load(ws, "report.json")
-    assert report["num_frames"] == 30 and report["matcher"] == "sequential"
+    assert report["num_frames"] == 30 and report["matcher"] == "retrieval"
     assert report["num_registered"] == len(cams["cameras"])
 
     manifest = load(ws, "manifest.json")
@@ -138,6 +141,15 @@ def test_photos_exhaustive_incremental(tmp_path):
     ).execute()
     report = load(ws, "report.json")
     assert report["matcher"] == "exhaustive" and report["mapper"] == "incremental"
+
+
+def test_auto_matcher_sequential_override(tmp_path):
+    ws = Workspace.open(tmp_path, "room")
+    make_ingest(ws, orbit_cameras(12), source="input/room.mp4")
+    SfmColmap(
+        ws, {"max_num_features": 1024, "matcher": "sequential", "min_registered": 3}
+    ).execute()
+    assert load(ws, "report.json")["matcher"] == "sequential"
 
 
 def test_unsupported_features(tmp_path):
@@ -182,3 +194,36 @@ def test_compute_alignment_falls_back_without_floor():
     a = compute_alignment("floor_ransac", rot, centers, np.zeros((0, 3)))
     assert a.up_method == "camera_up" and a.notes
     assert np.allclose(a.matrix[:3, :3] / a.scale, np.eye(3))
+
+
+# --- retrieval pair selection (no COLMAP) ---
+
+
+def test_select_pairs_window_quadratic_and_retrieval():
+    n, overlap = 40, 3
+    sim = np.full((n, n), -1.0)
+    sim[0, 39] = sim[39, 0] = 1.0  # loop closure: first and last frame look alike
+    pairs = select_pairs(sim, n, overlap, num_neighbors=1)
+    assert pairs == sorted(set(pairs)) and all(i < j for i, j in pairs)
+    assert (0, 39) in pairs
+    assert {(5, 6), (5, 7), (5, 8), (5, 9), (5, 13), (5, 21), (5, 37)} <= set(pairs)  # window + 2^k
+    assert (5, 10) not in pairs  # offset 5 is neither in the window nor a power of two
+    temporal = select_pairs(None, n, overlap, num_neighbors=5)
+    assert (0, 39) not in temporal and set(temporal) < set(pairs)
+
+
+def test_bow_similarity_groups_alike_images():
+    rng = np.random.default_rng(0)
+    words = rng.integers(0, 256, (2, 20, 128))  # two "places", 20 visual words each
+
+    def image(place: int) -> np.ndarray:
+        d = words[place][rng.integers(0, 20, 300)] + rng.integers(-3, 4, (300, 128))
+        return np.clip(d, 0, 255).astype(np.uint8)
+
+    descs = [image(0) for _ in range(4)] + [image(1) for _ in range(4)]
+    sim = bow_similarity(descs, num_words=32, sample=5000)
+    assert sim.shape == (8, 8) and np.all(np.diag(sim) == -1)
+    for i in range(8):
+        same = [j for j in range(8) if j != i and j // 4 == i // 4]
+        other = [j for j in range(8) if j // 4 != i // 4]
+        assert sim[i, same].min() > sim[i, other].max()

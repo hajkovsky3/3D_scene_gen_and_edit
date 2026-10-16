@@ -69,6 +69,9 @@ nie ako implementácia fázy. Primárna cesta rasterizuje výhradne cez gsplat.
 
 ## Konfigurácia
 
+Rýchly profil `configs/fast.yaml` (vývoj ďalších fáz): `iterations: 7000`, `cap_max: 500000`.
+Plán rozvrhu (densifikácia, learning rate) sa škáluje s počtom krokov.
+
 ```yaml
 reconstruction:
   impl: gsplat
@@ -135,6 +138,9 @@ Porovnanie na Mip-NeRF 360 scénach (room, counter, kitchen) s publikovanými č
   `mcmc`, 1 M gaussiánov, 30k krokov, 894×1590, 162 train / 24 test → PSNR 26.82, SSIM 0.895,
   LPIPS(alex) 0.256; 6 257 s tréning, špička VRAM 1,6 GB. Najhorší testovací pohľad f000097
   (PSNR 12.8) je rozmazaný záber zblízka.
+- [x] rýchly profil `configs/fast.yaml` na *izba* (194 kamier z 01 `retrieval`, iná testovacia
+  sada než vyššie): 7k krokov, 500k gaussiánov → PSNR 23.96, SSIM 0.870, LPIPS(alex) 0.336;
+  1 055 s tréning (6× rýchlejšie), špička VRAM 0,85 GB
 - [ ] overenie na *counter* a *kitchen*, porovnanie s 3DGS s LPIPS(vgg)
 - [ ] orezanie floaterov mimo objemu kamier (pozri Riziká)
 - [ ] test kompatibility PLY so SuperSplat
