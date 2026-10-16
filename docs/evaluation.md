@@ -6,7 +6,7 @@ Prehľad metrík a dát. Konkrétne metriky každej fázy sú v sekcii *Evaluác
 
 | Dataset | Na čo | Licencia / poznámka |
 |---|---|---|
-| Mip-NeRF 360 (room, counter, kitchen, bonsai, garden) | rekonštrukcia (02), úpravy (11), porovnanie s literatúrou | overiť podmienky použitia |
+| Mip-NeRF 360 (room, counter, kitchen, bonsai, garden) | rekonštrukcia (02), úpravy (11), porovnanie s literatúrou | autori licenciu neuvádzajú (stav 2026-10-15; tretie strany tvrdia rôzne: Apache 2.0, MIT), len na evaluáciu, nedistribuovať; scény sa sťahujú jednotlivo z `360_v2.zip` cez HTTP range (`images_2` + `sparse`, ~0,3–0,4 GB na scénu) |
 | LERF-Mask / 3D-OVS | open-vocabulary segmentácia v 3D (06), grounding (09) | overiť podmienky |
 | Vlastné scény (izba, stôl s predmetmi) | celý reťazec; scéna „pred a po“ fyzickom odstránení objektu na meranie inpaintingu | vlastné |
 
