@@ -124,8 +124,9 @@ hĺbku (reprojekcia), zvyšok dotrénovať — dobrý kandidát na vlastný expe
 |---|---|---|
 | `router` (primárna) | operátory a služby vyššie | vlastný kód + gsplat, LaMa |
 
-GaussianEditor (S-Lab, nekomerčná) a Instruct-NeRF2NeRF sa v práci citujú ako inšpirácia
-a porovnanie, kód sa nepoužíva.
+GaussianEditor (S-Lab, nekomerčná) a Instruct-NeRF2NeRF sa v práci citujú ako inšpirácia.
+GaussianEditor sa smie spustiť ako **nekomerčný** baseline na porovnanie (samostatné prostredie,
+kód sa nekopíruje ani nevolá z routera), pozri `docs/licenses.md`.
 
 ## Konfigurácia
 

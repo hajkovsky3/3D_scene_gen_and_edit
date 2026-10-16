@@ -60,7 +60,7 @@ spraví fáza 06.
 | `sam3` (alternatíva) | SAM 3: detekcia, segmentácia a sledovanie podľa textového konceptu jedným modelom | SAM License — vlastná, nie OSI, váhy za prihlásením na HF; **hraničné**, pozri `docs/licenses.md` |
 | `sam2_auto` (alternatíva) | SAM 2 automatic mask generator bez textu (všetko, čo je objekt), labely dodá až 05/07 cez CLIP | Apache 2.0 |
 
-Pozor: Grounding DINO 1.5/1.6 a DINO-X **nie sú** open-source (iba API) — nepoužívať.
+Pozor: Grounding DINO 1.5/1.6 a DINO-X **nie sú** free to use (iba platené API) — nepoužívať.
 Pozor: Grounded-SAM negeneruje CLIP embeddingy; to je samostatná fáza 05.
 
 ## Konfigurácia

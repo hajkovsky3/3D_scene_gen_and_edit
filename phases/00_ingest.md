@@ -114,9 +114,10 @@ Iba CPU. Sekundy až minúty.
   pomôže nižšie `video_fps` a prísnejší prah ostrosti.
 - Rôzne fotoaparáty v jednej sade: zachovať informáciu o zdroji kvôli SfM (rôzne kamery).
 - Lesklé a priehľadné povrchy, pohybujúce sa objekty: tu sa neriešia, len zaznamenať.
-- **HEIC** (fotky z iPhonu) sa nepodporuje: `pillow-heif` vo svojich wheel balíčkoch
-  pribaľuje x265 (GPL-2), čo nespĺňa licenčné pravidlo projektu. Z rovnakého dôvodu sa
-  nepoužíva PyAV (pribaľuje x264/x265). Riešenie: konverzia na JPEG mimo reťazca.
+- **HEIC** (fotky z iPhonu) primárna implementácia nepodporuje: `pillow-heif` vo svojich wheel
+  balíčkoch pribaľuje x265 (GPL-2), preto môže byť len voliteľný doplnok (stav `NEKOMERČNÉ`
+  v `docs/licenses.md`), nie súčasť primárnej cesty. To isté platí pre PyAV (pribaľuje
+  x264/x265). Riešenie v primárnej ceste: konverzia na JPEG mimo reťazca.
 - `cv2.VideoCapture` pri videu s premenlivým framerate môže vracať nepresné časy
   (`CAP_PROP_POS_MSEC`); na výber snímok to stačí.
 

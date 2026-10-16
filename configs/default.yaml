@@ -1,5 +1,7 @@
 # Predvolená konfigurácia. Hodnoty a význam parametrov: phases/XX_*.md, sekcia Konfigurácia.
 # Zmena implementácie fázy: zmeň `impl`.
+# Tu sú iba primárne implementácie s permisívnou licenciou; nekomerčné alternatívy
+# (docs/licenses.md, stav NEKOMERČNÉ) sa vyberajú len cez CLI alebo vlastný config.
 
 # --- 00_ingest ---
 ingest:

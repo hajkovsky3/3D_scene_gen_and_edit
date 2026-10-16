@@ -69,8 +69,9 @@ pretože vzťahy v grafe scény (napr. *on*) potrebujú vedieť, kde je hore.
 | `colmap` (primárna) | COLMAP 4.x cez `pycolmap` (wheel z PyPI, iba CPU); zatiaľ SIFT, sequential/exhaustive, global/incremental mapper | BSD; wheel pribaľuje SuiteSparse (časti GPL/LGPL) — HRANIČNÉ, pozri `docs/licenses.md` |
 | `vggt` (alternatíva) | feed-forward VGGT, export do COLMAP formátu, voliteľný BA; vhodné pri málo snímkach | VGGT License; **iba checkpoint `VGGT-1B-Commercial`** (pôvodný je nekomerčný) — hraničné, pozri `docs/licenses.md` |
 
-Neodporúčané pre tento projekt kvôli licencii: MASt3R / DUSt3R (CC BY-NC-SA),
-SuperPoint váhy od Magic Leap (nekomerčné).
+Iba ako **nekomerčné** alternatívy (nie primárna cesta, pozri `docs/licenses.md`):
+MASt3R / DUSt3R (CC BY-NC-SA; vhodné pri málo snímkach), pôvodný checkpoint VGGT-1B
+(FAIR Noncommercial), SuperPoint váhy od Magic Leap (hloc).
 
 ## Konfigurácia
 

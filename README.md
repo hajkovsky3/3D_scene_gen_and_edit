@@ -23,7 +23,8 @@ k tomuto objektu patria.
 
 Projekt nevymýšľa novú metódu pre každý krok. Skladá reťazec z existujúcich open-source nástrojov
 a dopĺňa vlastné moduly tam, kde hotové riešenie chýba (prenos masiek na gaussiány, router úprav).
-Všetky použité moduly musia byť **free a open source**. Každá fáza je **samostatne vymeniteľný
+Všetky použité moduly musia byť **free to use**; primárna implementácia každej fázy je
+open source s permisívnou licenciou, nekomerčné nástroje slúžia iba ako alternatívy a na porovnanie. Každá fáza je **samostatne vymeniteľný
 modul** s pevne definovaným vstupom a výstupom.
 
 ## Pipeline

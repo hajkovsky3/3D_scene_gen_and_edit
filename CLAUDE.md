@@ -39,15 +39,28 @@ Každá fáza je samostatný modul s jasným kontraktom **vstupné súbory → v
 
 ## Licenčné pravidlo
 
-Všetky použité moduly, knižnice a váhy modelov musia byť **free to use a open source**.
+Všetky použité moduly, knižnice a váhy modelov musia byť **free to use** pre tento projekt
+(bakalárska práca, nekomerčné akademické použitie). Licencie majú dve úrovne:
 
-- Povolené: MIT, BSD, Apache 2.0 a podobné permisívne licencie.
-- Zakázané: nekomerčné a výskumné licencie (INRIA Gaussian-Splatting License, S-Lab License,
-  CC BY-NC, FAIR Noncommercial), licencie s územným vylúčením EÚ (napr. Hunyuan3D).
+- **Primárna implementácia každej fázy** (tá, ktorá je v `configs/default.yaml`) musí byť
+  permisívna: MIT, BSD, Apache 2.0 a podobné. Celý reťazec sa tak dá spustiť bez nekomerčných
+  častí a neskoršie komerčné použitie ostáva otvorené.
+- **Alternatívne implementácie, baseline a nástroje na vyhodnotenie** môžu mať aj nekomerčnú
+  alebo výskumnú licenciu (INRIA Gaussian-Splatting License, S-Lab License, CC BY-NC,
+  FAIR Noncommercial, NVIDIA Source Code License a podobné), prípadne copyleft (GPL). Podmienky:
+  - nikdy nie ako primárna implementácia, ani ako povinná tranzitívna závislosť primárnej cesty,
+  - kód sa iba volá ako externá závislosť (vlastné prostredie v `envs/`), **nekopíruje sa**
+    do repozitára ani sa neupravuje v ňom,
+  - v `docs/licenses.md` so stavom `NEKOMERČNÉ` a v tabuľke implementácií v `phases/XX_*.md`
+    s označením **nekomerčné**,
+  - dodržať ďalšie podmienky licencie (citácia, registrácia, zákaz šírenia váh).
 - Hraničné (vlastné licencie bez OSI schválenia, napr. SAM License, VGGT License, OpenRAIL-M):
   len po výslovnom súhlase autora a so záznamom v `docs/licenses.md`.
-- **Pozor na tranzitívne závislosti.** Napríklad `diff-gaussian-rasterization` (INRIA) nepoužívať,
-  na rasterizáciu gaussiánov vždy `gsplat` (Apache 2.0).
+- **Zakázané** je to, čo pre nás nie je free to use: licencie s územným vylúčením EÚ
+  (Hunyuan3D, multimodálna Llama), platené alebo iba API modely, licencie, ktorých podmienky
+  nevieme splniť.
+- **Pozor na tranzitívne závislosti.** Primárna cesta rasterizuje gaussiány vždy cez `gsplat`
+  (Apache 2.0); `diff-gaussian-rasterization` (INRIA) iba v nekomerčných alternatívach.
 - Pred pridaním novej závislosti alebo modelu over licenciu kódu **aj váh** a zapíš ju do
   `docs/licenses.md`. Ak si nie si istý, opýtaj sa.
 
@@ -121,5 +134,7 @@ Vývojový počítač je slabší, prístup k výkonnejšej GPU sa ešte rieši.
 
 - Necommitovať dáta scén, váhy modelov, `*.ply`, `*.npz`, renderované videá.
 - Nesťahovať modely ani datasety bez opýtania (veľkosť, licencia).
-- Nekopírovať kód z repozitárov s nekompatibilnou licenciou, ani „inšpirovať sa“ doslovne.
+- Nekopírovať kód z repozitárov s nekompatibilnou licenciou, ani „inšpirovať sa“ doslovne
+  (nekomerčné nástroje sa iba volajú, pozri Licenčné pravidlo).
+- Nedávať nekomerčnú implementáciu ako `impl` do `configs/default.yaml`.
 - Nemeniť kontrakt fázy len v kóde bez úpravy jej `.md`.

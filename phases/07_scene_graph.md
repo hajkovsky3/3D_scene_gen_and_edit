@@ -87,7 +87,7 @@ ConceptGraphs (MIT) slúži ako referencia pre postup (captions cez VLM, vzťahy
 kód sa dá čiastočne prevziať pri dodržaní licencie (MIT — zachovať copyright notice).
 
 Pri LLM/VLM over licenciu **konkrétnej veľkosti** modelu (napr. Qwen2.5-VL-3B a -72B majú
-iné licencie ako 7B). Llama modely nepoužívať (vlastná licencia, obmedzenia v EÚ pri multimodálnych).
+iné licencie ako 7B). Multimodálne Llama modely nepoužívať (licencia ich v EÚ neumožňuje, `ZAKÁZANÉ`).
 Lokálny beh: `transformers`, `vLLM` (Apache 2.0) alebo `llama.cpp` / `Ollama` (MIT).
 
 ## Konfigurácia

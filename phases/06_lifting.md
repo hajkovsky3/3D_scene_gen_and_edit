@@ -110,6 +110,8 @@ inak by veľká inštancia pohltila malé.
 Baseline je užitočný na porovnanie v práci (ukáže prínos váh namiesto bodovej projekcie).
 Princíp training-free prenosu masiek na gaussiány je publikovaný napr. vo FlashSplat (ECCV 2024);
 kód takých prác **nekopírovať**, ak stojí na INRIA rasterizéri — implementovať vlastný.
+Hotové metódy nad INRIA kódom (Gaussian Grouping, LangSplat, Feature 3DGS …) sa smú spustiť
+ako **nekomerčný** baseline na porovnanie (samostatné prostredie, pozri `docs/licenses.md`).
 
 ## Konfigurácia
 

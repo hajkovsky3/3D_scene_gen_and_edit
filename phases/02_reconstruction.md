@@ -63,9 +63,9 @@ Odporúčania pre neskoršie fázy:
 | `gsplat` (primárna) | vlastný tréningový skript nad knižnicou gsplat (alebo upravený `examples/simple_trainer.py`) | Apache 2.0 |
 | `splatfacto` (alternatíva) | nerfstudio metóda nad gsplat, viac hotovej infraštruktúry, ťažšia závislosť | Apache 2.0 |
 
-**Nepoužívať**: oficiálna INRIA implementácia a `diff-gaussian-rasterization` (nekomerčná
-licencia), ani metódy postavené na nich (LangSplat, Feature 3DGS, Gaussian Grouping …),
-pokiaľ nie sú prenesené na gsplat s kompatibilnou licenciou.
+Oficiálna INRIA implementácia a `diff-gaussian-rasterization` (nekomerčná licencia) sa smú
+použiť iba na **porovnanie** v práci (nekomerčné, samostatné prostredie, kód sa nekopíruje),
+nie ako implementácia fázy. Primárna cesta rasterizuje výhradne cez gsplat.
 
 ## Konfigurácia
 
@@ -138,6 +138,6 @@ Porovnanie na Mip-NeRF 360 scénach (room, counter, kitchen) s publikovanými č
 ## Zdroje
 
 - Kerbl et al.: 3D Gaussian Splatting for Real-Time Radiance Field Rendering, SIGGRAPH 2023
-  (citovať ako metódu, kód nepoužívať).
+  (citovať ako metódu; kód len na porovnanie, nekomerčná licencia).
 - Ye et al.: gsplat: An Open-Source Library for Gaussian Splatting, 2024. https://github.com/nerfstudio-project/gsplat
 - Kheradmand et al.: 3D Gaussian Splatting as Markov Chain Monte Carlo, NeurIPS 2024.

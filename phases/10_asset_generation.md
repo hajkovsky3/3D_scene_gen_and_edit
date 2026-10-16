@@ -61,11 +61,15 @@ Fáza sa spúšťa len vtedy, ak plán obsahuje `replace` alebo `insert`.
 | `primitive` (baseline) | parametrická krabica / valec požadovanej farby ako gaussiány — overí celý reťazec úprav bez generatívnych modelov | vlastný kód |
 
 **Licenčné pozor**:
-- Hunyuan3D nepoužívať (licencia vylučuje EÚ). SDXL-Turbo, SD 3.x (nekomerčné / vlastné licencie) nepoužívať.
+- Hunyuan3D nepoužívať (licencia vylučuje EÚ, `ZAKÁZANÉ`).
+- FLUX.1-dev, SDXL-Turbo, SD 3.x (nekomerčné / vlastné licencie) iba ako **nekomerčná**
+  alternatíva text → obrázok, nie v primárnej implementácii.
 - TRELLIS ťahá závislosti s vlastnými licenciami (napr. `nvdiffrast` — NVIDIA, nekomerčná;
   niektoré verzie gaussian rasterizérov odvodené od INRIA). Pred použitím prejsť `requirements`
-  a zistiť, ktoré sú nutné len na renderovanie náhľadov — tie nahradiť gsplat. Zapísať do
-  `docs/licenses.md`.
+  a zistiť, ktoré sú nutné len na renderovanie náhľadov — tie nahradiť gsplat. Ak nekomerčná
+  závislosť ostane nutná, `flux_trellis` / `trellis2_mesh` sa označia ako **nekomerčné**
+  alternatívy a primárnou implementáciou v `configs/default.yaml` sa stane `primitive`.
+  Zapísať do `docs/licenses.md`.
 
 ## Konfigurácia
 
