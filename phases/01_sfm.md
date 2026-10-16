@@ -135,7 +135,12 @@ test: `tests/contracts/test_p01.py` (syntetická miestnosť so známymi kamerami
 - [x] export `cameras.json`, `points.npz`, `report.json`
 - [x] kontraktový test (30 syntetických snímok: všetky zaregistrované, ohnisko ±3 %,
   sklon kamier voči +Z ako v skutočnosti; ~11 s na CPU)
-- [ ] overenie na reálnej scéne (výstup fázy 00 z videa z telefónu)
+- [x] overenie na reálnej scéne *izba* (2026-10-16, 208 snímok z fázy 00, video zvnútra izby):
+  `sequential` → 83/208 (40 %), 7 modelov (medzery po rýchlych otočeniach, bez loop detection);
+  `exhaustive` → 186/208 (89 %), 30 823 bodov, reprojekčná chyba 0,61 px; ~75 min na CPU
+  (takmer všetko párovanie)
+- [ ] `matcher: auto` volí pri videu `sequential`, čo na *izba* zlyhalo — zvážiť `exhaustive`
+  pri malom počte snímok alebo loop detection
 - [ ] ALIKED / LightGlue / vocab tree (čaká na schválenie stiahnutia váh)
 - [ ] (voliteľné) implementácia `vggt`
 

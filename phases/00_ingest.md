@@ -136,5 +136,7 @@ Inštalácia: `pip install -e ".[dev,ingest]"`.
 - [x] deduplikácia
 - [x] zápis `frames.json` + manifest
 - [x] kontraktový test (syntetické fotky a video)
-- [ ] overenie na reálnej scéne (video z telefónu vrátane rotácie na výšku)
+- [x] overenie na reálnej scéne *izba* (2026-10-16): video z telefónu na výšku, 100 s, 1080×1920
+  s rotáciou v metadátach → 208 snímok 900×1600, 90 vyradených pre rozmazanie, 1 duplikát; 72 s
+  na CPU. Pri rýchlych otočeniach vznikajú medzery až 6 s bez snímok.
 - [ ] doladenie prahov podľa úspešnosti registrácie v 01

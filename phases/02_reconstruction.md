@@ -131,6 +131,10 @@ Porovnanie na Mip-NeRF 360 scénach (room, counter, kitchen) s publikovanými č
   30k krokov, 1556×1037 (`images_2`), 272 train / 39 test (každý 8.) → PSNR 32.94, SSIM 0.948,
   LPIPS(alex) 0.116; 7 020 s tréning, špička VRAM 1,6 GB
   (3DGS v článku: 30.63 / 0.914 / 0.220, ale LPIPS s VGG)
+- [x] overenie na vlastnej scéne *izba* (2026-10-16, video z telefónu, 186 kamier z 01 s `exhaustive`):
+  `mcmc`, 1 M gaussiánov, 30k krokov, 894×1590, 162 train / 24 test → PSNR 26.82, SSIM 0.895,
+  LPIPS(alex) 0.256; 6 257 s tréning, špička VRAM 1,6 GB. Najhorší testovací pohľad f000097
+  (PSNR 12.8) je rozmazaný záber zblízka.
 - [ ] overenie na *counter* a *kitchen*, porovnanie s 3DGS s LPIPS(vgg)
 - [ ] orezanie floaterov mimo objemu kamier (pozri Riziká)
 - [ ] test kompatibility PLY so SuperSplat
