@@ -86,7 +86,25 @@ reconstruction:
   lpips: true              # LPIPS(alex) v reporte; stiahne váhy AlexNet z torchvision (~233 MB)
   num_test_renders: 8      # koľko testovacích renderov uložiť do test_renders/
   seed: 0
+  compile_ssim: true       # SSIM v loss cez torch.compile (rovnaká hodnota, ~4× rýchlejšie)
+  resolution_schedule: [[0.25, 0.25], [0.5, 0.5]]  # coarse-to-fine; [] = vypnuté
 ```
+
+**Rýchlosť tréningu.** Na GTX 1650 (500k gaussiánov, 894×1590) zaberalo SSIM v loss
+(2D konvolúcia 11×11, dopredu aj spätne) väčšinu kroku, rasterizácia gsplat len ~10 ms.
+Preto:
+- `compile_ssim`: SSIM sa počíta ako vážený súčet posunutých kópií (separabilné gaussovské
+  okno, nulový padding, presne rovnaké ako konvolúcia) a kompiluje sa cez `torch.compile`
+  (Triton je súčasťou PyTorch, nič sa nepridáva). Prvý krok trvá o ~10 s dlhšie (kompilácia).
+  Ak kompilácia zlyhá, použije sa pôvodná funkcia. Metriky v reporte sa vždy počítajú
+  pôvodnou funkciou `core.metrics.ssim`.
+- Adam beží ako `fused` kernel (numericky rovnaký).
+- Skúšaný `SelectiveAdam` z gsplat (aktualizuje iba viditeľné gaussiány, ~8 ms/krok menej)
+  s MCMC na *izbe* vyrobil degenerovaný gaussián (mierka 481 pri scéne 134), validácia výstupu
+  beh zastavila; preto sa nepoužíva.
+- `resolution_schedule` (default `[[0.25, 0.25], [0.5, 0.5]]`): `[[podiel_krokov, mierka], ...]`, kroky pred
+  `podiel × iterations` trénujú pri danej mierke rozlíšenia (referencia sa zmenší
+  priemerovaním, intrinsika sa preškáluje), potom v plnom rozlíšení.
 
 ## Hardvér
 
@@ -141,7 +159,23 @@ Porovnanie na Mip-NeRF 360 scénach (room, counter, kitchen) s publikovanými č
 - [x] rýchly profil `configs/fast.yaml` na *izba* (194 kamier z 01 `retrieval`, iná testovacia
   sada než vyššie): 7k krokov, 500k gaussiánov → PSNR 23.96, SSIM 0.870, LPIPS(alex) 0.336;
   1 055 s tréning (6× rýchlejšie), špička VRAM 0,85 GB
-- [ ] overenie na *counter* a *kitchen*, porovnanie s 3DGS s LPIPS(vgg)
+- [x] zrýchlenie tréningu (2026-10-17, GTX 1650 vo WSL, `fast`: 7k krokov, 500k gaussiánov).
+  Profil kroku pred úpravou (*izba*, 894×1590): 133 ms, z toho SSIM dopredu 33 ms, backward
+  (render + SSIM) 53 ms, Adam 25 ms, render 10 ms. Výsledky (GPU počas meraní zdieľali aj iné
+  aplikácie, časy porovnateľné len v rámci jednej scény):
+
+  | Scéna | Variant | Tréning | PSNR | SSIM | LPIPS |
+  |---|---|---|---|---|---|
+  | *izba* (189 train) | pôvodné SSIM, Adam | 1 649 s | 23,26 | 0,869 | 0,367 |
+  | *izba* | `compile_ssim` + fused Adam | 1 304 s | 23,13 | 0,867 | 0,371 |
+  | *izba* | + `resolution_schedule` (default) | **901 s** | 23,19 | 0,870 | 0,365 |
+  | counter (210 train) | `compile_ssim` + fused Adam | 1 025 s | 27,90 | 0,908 | 0,165 |
+  | counter | + `resolution_schedule` (default) | **819 s** | 27,84 | 0,906 | 0,163 |
+
+  Rovnaká konfigurácia na *izbe* dala raz PSNR 22,83 a raz 23,26: tréning na GPU nie je
+  deterministický a rozdiely do ~0,4 dB sú šum. Spolu −45 % času na *izbe*, −20 % na counter
+  (menšie snímky, menší podiel ceny za pixel) bez merateľnej straty kvality.
+- [ ] overenie na *counter* a *kitchen* s plným tréningom (30k), porovnanie s 3DGS s LPIPS(vgg)
 - [ ] orezanie floaterov mimo objemu kamier (pozri Riziká)
 - [ ] test kompatibility PLY so SuperSplat
 

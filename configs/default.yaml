@@ -56,6 +56,8 @@ reconstruction:
   lpips: true             # LPIPS(alex) v reporte, stiahne váhy AlexNet (~233 MB)
   num_test_renders: 8      # koľko testovacích renderov uložiť na kontrolu
   seed: 0
+  compile_ssim: true       # SSIM v loss cez torch.compile (rovnaká hodnota, rýchlejšie)
+  resolution_schedule: [[0.25, 0.25], [0.5, 0.5]]  # coarse-to-fine: prvá 1/4 krokov na 1/4 rozlíšenia, druhá na 1/2; [] = vypnuté
 
 # --- 03_tagging ---
 tagging:

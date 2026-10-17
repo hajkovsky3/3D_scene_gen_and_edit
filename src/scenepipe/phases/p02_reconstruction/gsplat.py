@@ -22,7 +22,7 @@ from PIL import Image
 
 from scenepipe.core.cameras import Camera, load_cameras
 from scenepipe.core.gaussians import Gaussians, read_ply, rgb_to_sh_dc, write_ply
-from scenepipe.core.metrics import Lpips, psnr, ssim
+from scenepipe.core.metrics import Lpips, psnr, ssim, ssim_shifted
 from scenepipe.core.phase import ContractError, Phase, register
 from scenepipe.core.render import from_params, render, to_params
 
@@ -56,6 +56,8 @@ class ReconstructionGsplat(Phase):
         "lpips": True,
         "num_test_renders": 8,
         "seed": 0,
+        "compile_ssim": True,
+        "resolution_schedule": [[0.25, 0.25], [0.5, 0.5]],
     }
 
     def inputs(self) -> dict[str, Path]:
@@ -164,10 +166,14 @@ class ReconstructionGsplat(Phase):
             "sh0": 2.5e-3,
             "shN": 2.5e-3 / 20,
         }
-        optimizers = {
-            name: torch.optim.Adam([{"params": params[name], "lr": lr, "name": name}], eps=1e-15)
+        optimizers = {  # fused kernel, numerically the same as the default Adam
+            name: torch.optim.Adam(
+                [{"params": params[name], "lr": lr, "name": name}], eps=1e-15, fused=True
+            )
             for name, lr in lrs.items()
         }
+        loss_ssim = _TrainSsim(bool(cfg["compile_ssim"]))
+        schedule = _resolution_schedule(cfg["resolution_schedule"], iters)
         means_sched = torch.optim.lr_scheduler.ExponentialLR(
             optimizers["means"], gamma=0.01 ** (1.0 / max(iters, 1))
         )
@@ -182,6 +188,8 @@ class ReconstructionGsplat(Phase):
                 order = torch.randperm(len(train), generator=gen).tolist()
             cam = train[order.pop()]
             gt = images[cam.frame_id].cuda(non_blocking=True).float()[None] / 255
+            if (scale := schedule(step)) != 1.0:
+                cam, gt = _downscaled(cam, gt, scale)
             sh_degree = min(step // SH_DEGREE_INTERVAL, int(cfg["sh_degree"]))
             rgb, _, _, info = render(
                 params,
@@ -193,7 +201,7 @@ class ReconstructionGsplat(Phase):
             if isinstance(strategy, DefaultStrategy):
                 strategy.step_pre_backward(params, optimizers, state, step, info)
             l1 = torch.abs(rgb - gt).mean()
-            loss = (1 - SSIM_LAMBDA) * l1 + SSIM_LAMBDA * (1 - ssim(rgb, gt))
+            loss = (1 - SSIM_LAMBDA) * l1 + SSIM_LAMBDA * (1 - loss_ssim(rgb, gt))
             if isinstance(strategy, MCMCStrategy):  # regularizers from the MCMC paper
                 loss = loss + 0.01 * torch.sigmoid(params["opacities"]).mean()
                 loss = loss + 0.01 * torch.exp(params["scales"]).mean()
@@ -391,6 +399,45 @@ class ReconstructionGsplat(Phase):
 
 
 # --- helpers ---------------------------------------------------------------------------------
+
+
+class _TrainSsim:
+    """SSIM for the training loss: `ssim_shifted` compiled by torch.compile (~4x faster),
+    falling back to the plain `ssim` (same value) when compiling is not possible."""
+
+    def __init__(self, compile_: bool):
+        self.fn = torch.compile(ssim_shifted) if compile_ else ssim
+
+    def __call__(self, img: torch.Tensor, ref: torch.Tensor) -> torch.Tensor:
+        try:
+            return self.fn(img, ref)
+        except Exception as e:  # any compiler or toolchain failure
+            if self.fn is ssim:
+                raise
+            log.warning("torch.compile of SSIM failed (%s), using the eager version", e)
+            self.fn = ssim
+            return ssim(img, ref)
+
+
+def _resolution_schedule(schedule: list, iters: int):
+    """step -> image scale. `schedule` is [[fraction_of_iterations, scale], ...] ascending:
+    steps before fraction * iters train at that scale (coarse to fine), later at full."""
+    bounds = sorted((float(f) * iters, float(s)) for f, s in schedule)
+
+    def scale_at(step: int) -> float:
+        for end, s in bounds:
+            if step < end:
+                return s
+        return 1.0
+
+    return scale_at
+
+
+def _downscaled(cam: Camera, gt: torch.Tensor, scale: float) -> tuple[Camera, torch.Tensor]:
+    """Camera and ground truth [1, H, W, 3] at `scale` of the training resolution."""
+    w, h = max(round(cam.width * scale), 1), max(round(cam.height * scale), 1)
+    small = torch.nn.functional.interpolate(gt.permute(0, 3, 1, 2), size=(h, w), mode="area")
+    return cam.scaled(w, h), small.permute(0, 2, 3, 1).contiguous()
 
 
 def split_views(cams: list[Camera], test_every: int) -> tuple[list[Camera], list[Camera]]:
