@@ -16,6 +16,9 @@ ingest:
   blur_filter_photos: false
   blur_max_gap_s: 1.0       # rozmazané snímky z videa sa nechajú, ak by vznikla dlhšia medzera; 0 = vypnuté
   blur_gap_min_ratio: 0.3   # ...ale nie snímky pod 0,3 × medián ostrosti videa
+  keyframe_motion: 0.12     # okno výberu podľa pohybu kamery (podiel dlhšej strany); 0 = podľa času
+  keyframe_max_gap_s: 2.0   # pri keyframe_motion: najdlhšie okno (stojaca kamera)
+  video_hw_decode: false    # GPU dekódovanie cez ffmpeg (na GTX 1650 + HEVC z telefónu sa neinicializuje)
 
 # --- 01_sfm ---
 sfm:
@@ -27,11 +30,11 @@ sfm:
   fallback_incremental_below: 0.8
   single_camera: true       # true pre video z jedného telefónu
   align_up: floor_ransac    # camera_up | floor_ransac | none
-  use_gpu: true             # ignored by the CPU-only pycolmap wheel
+  use_gpu: true             # párovanie deskriptorov na GPU cez PyTorch (ak je CUDA), inak COLMAP na CPU
   max_num_features: 8192
   sift_max_image_size: -1   # dlhšia strana obrázka pre SIFT; -1 = COLMAP default (3200)
-  sequential_overlap: 10    # sequential/retrieval: počet nasledujúcich snímok v okne
-  retrieval_num_neighbors: 10   # retrieval: najpodobnejšie snímky mimo okna
+  sequential_overlap: 5     # sequential/retrieval: počet nasledujúcich snímok v okne
+  retrieval_num_neighbors: 5    # retrieval: najpodobnejšie snímky mimo okna
   retrieval_num_words: 1024     # retrieval: veľkosť slovníka vizuálnych slov
   retrieval_sample: 100000      # retrieval: počet deskriptorov na k-means
   auto_exhaustive_max: 100  # auto: exhaustive do tohto počtu snímok, inak retrieval

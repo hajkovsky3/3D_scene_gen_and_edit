@@ -152,6 +152,8 @@ gaussiánov musí rovnako preusporiadať aj ich.
 ```
 
 Snímky, ktoré SfM nezaregistrovalo, v zozname nie sú. Ďalšie fázy pracujú iba s nimi.
+`contract_version` je verzia kontraktu fázy 01 (`phases/01_sfm.md`); verzia 2 pridala polia
+do `report.json`, formát `cameras.json` je rovnaký ako vo verzii 1.
 
 ## 7. Masky
 

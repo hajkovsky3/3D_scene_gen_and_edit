@@ -69,7 +69,7 @@ def test_outputs_format(video_run):
     assert not (out / "_work").exists()
 
     cams = load(ws, "cameras.json")
-    assert cams["contract_version"] == 1
+    assert cams["contract_version"] == 2
     assert cams["convention"] == "opencv_world_to_camera" and cams["up_axis"] == "+z"
     for c in cams["cameras"]:
         assert set(c) == {

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import tempfile
+import time
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -15,6 +17,7 @@ from PIL import Image
 from scenepipe.core.phase import ContractError, Phase, register
 from scenepipe.phases.p01_sfm.align import compute_alignment
 from scenepipe.phases.p01_sfm.retrieval import bow_similarity, select_pairs
+from scenepipe.phases.p01_sfm.torch_match import cuda_available, match_pairs
 
 log = logging.getLogger(__name__)
 
@@ -29,8 +32,8 @@ MIN_MATCH_CHUNK = 100
 class SfmColmap(Phase):
     phase = "01_sfm"
     impl = "colmap"
-    impl_version = "2"
-    contract_version = 1
+    impl_version = "3"
+    contract_version = 2
     defaults: ClassVar[dict[str, Any]] = {
         "features": "sift",
         "matcher": "auto",
@@ -42,8 +45,8 @@ class SfmColmap(Phase):
         "use_gpu": True,
         "max_num_features": 8192,
         "sift_max_image_size": -1,
-        "sequential_overlap": 10,
-        "retrieval_num_neighbors": 10,
+        "sequential_overlap": 5,
+        "retrieval_num_neighbors": 5,
         "retrieval_num_words": 1024,
         "retrieval_sample": 100_000,
         "auto_exhaustive_max": 100,
@@ -61,21 +64,30 @@ class SfmColmap(Phase):
         }
 
     def run(self) -> dict[str, Path]:
-        cfg = self.config
         self._check_supported()
+        for name in ("_work", "sparse", "images_undistorted"):
+            if (self.out_dir / name).exists():
+                shutil.rmtree(self.out_dir / name)
+        # The COLMAP database is written and read many times per pair: keep the work dir on
+        # a local disk (system temp), the workspace may be a slow network/WSL mount.
+        work = Path(tempfile.mkdtemp(prefix="scenepipe_01_sfm_"))
+        try:
+            return self._run(work)
+        finally:
+            if self.config["keep_work"]:
+                shutil.copytree(work, self.out_dir / "_work", dirs_exist_ok=True)
+            shutil.rmtree(work, ignore_errors=True)
+
+    def _run(self, work: Path) -> dict[str, Path]:
+        cfg = self.config
         frames = json.loads(self.ws.abs("00_ingest/frames.json").read_text(encoding="utf-8"))
         frames = frames["frames"]
         images_dir = self.ws.abs("00_ingest/images")
         names = [Path(f["image"]).name for f in frames]
-
-        for name in ("_work", "sparse", "images_undistorted"):
-            if (self.out_dir / name).exists():
-                shutil.rmtree(self.out_dir / name)
-        work = self.out_dir / "_work"
-        work.mkdir(parents=True)
         db = work / "database.db"
 
         # 1. features
+        timer = _Timer()
         self.progress.update(0.0, "extrakcia príznakov", f"SIFT, {len(names)} snímok")
         single = self._single_camera(frames)
         reader = pycolmap.ImageReaderOptions()
@@ -98,27 +110,26 @@ class SfmColmap(Phase):
             extraction_options=extraction,
             device=pycolmap.Device.cpu,
         )
+        timer.lap("features")
 
         # 2.-3. matching + geometric verification
         matcher = self._matcher(frames)
         matching = pycolmap.FeatureMatchingOptions()
         matching.num_threads = int(cfg["num_threads"])
         self.progress.update(0.08, "výber dvojíc", matcher)
-        if matcher == "sequential":
-            self.progress.update(0.1, "párovanie", "sequential (bez priebežného stavu)")
-            pairing = pycolmap.SequentialPairingOptions()
-            pairing.overlap = int(cfg["sequential_overlap"])
-            pairing.quadratic_overlap = True
-            pairing.loop_detection = False
-            pycolmap.match_sequential(
-                db, matching_options=matching, pairing_options=pairing, device=pycolmap.Device.cpu
-            )
+        if matcher == "retrieval":
+            pairs = self._retrieval_pairs(db, names)
+        elif matcher == "sequential":
+            pairs = select_pairs(None, len(names), int(cfg["sequential_overlap"]), 0)
         else:
-            if matcher == "retrieval":
-                pairs = self._retrieval_pairs(db, names)
-            else:
-                pairs = [(i, j) for i in range(len(names)) for j in range(i + 1, len(names))]
+            pairs = [(i, j) for i in range(len(names)) for j in range(i + 1, len(names))]
+        timer.lap("pairs")
+        device = self._match_device()
+        if device == "cuda":
+            self._match_pairs_torch(db, names, pairs, matching, work)
+        else:
             self._match_pairs(db, names, pairs, matching, work)
+        timer.lap("matching")
 
         # 4.-5. mapping (+ bundle adjustment)
         self.progress.update(0.85, "mapping", f"{cfg['mapper']} mapper")
@@ -139,6 +150,7 @@ class SfmColmap(Phase):
         raw = work / "raw"
         raw.mkdir()
         best.write_binary(raw)
+        timer.lap("mapping")
 
         # 6. undistortion -> PINHOLE cameras + new images
         self.progress.update(0.95, "undistorcia", f"{best.num_reg_images()} kamier")
@@ -147,6 +159,7 @@ class SfmColmap(Phase):
             undist, raw, images_dir, output_type="COLMAP", jpeg_quality=JPEG_QUALITY
         )
         recon = pycolmap.Reconstruction(undist / "sparse")
+        timer.lap("undistortion")
 
         # 7. alignment (+Z up, centered, unit RMS camera spread)
         self.progress.update(0.98, "zarovnanie a export")
@@ -175,11 +188,12 @@ class SfmColmap(Phase):
             "points": self._write_points(recon),
             "alignment": self._write_json("alignment.json", alignment.to_json()),
         }
+        timer.lap("export")
         report = self._report(recon, frames, models, best_mapper, matcher, single, removed)
+        report["num_pairs"] = len(pairs)
+        report["match_device"] = device
+        report["timings_s"] = timer.laps
         outs["report"] = self._write_json("report.json", report)
-
-        if not cfg["keep_work"]:
-            shutil.rmtree(work)
         return outs
 
     def _check_supported(self) -> None:
@@ -255,6 +269,58 @@ class SfmColmap(Phase):
             pycolmap.match_image_pairs(
                 db, matching_options=matching, pairing_options=pairing, device=pycolmap.Device.cpu
             )
+        stage.update(1.0, f"{len(pairs)} dvojíc")
+
+    def _match_device(self) -> str:
+        """`cuda` when use_gpu is set and PyTorch sees a CUDA GPU, else `cpu` (COLMAP)."""
+        if self.config["use_gpu"] and cuda_available():
+            return "cuda"
+        if self.config["use_gpu"]:
+            log.info("01_sfm: no PyTorch with CUDA, matching on the CPU with COLMAP")
+        return "cpu"
+
+    def _match_pairs_torch(
+        self,
+        db_path: Path,
+        names: list[str],
+        pairs: list[tuple[int, int]],
+        matching: pycolmap.FeatureMatchingOptions,
+        work: Path,
+    ) -> None:
+        """Nearest-neighbour matching on the GPU, geometric verification in COLMAP."""
+        sift = matching.sift
+        db = pycolmap.Database.open(db_path)
+        try:
+            ids = {img.name: img.image_id for img in db.read_all_images()}
+            descs = [np.asarray(db.read_descriptors(ids[n]).data) for n in names]
+            stage = self.progress.stage(0.1, 0.4, "párovanie (GPU)")
+            for i, j, m in match_pairs(
+                descs,
+                pairs,
+                max_ratio=sift.max_ratio,
+                max_distance=sift.max_distance,
+                cross_check=sift.cross_check,
+                on_progress=lambda done: stage.update(done / len(pairs), f"{done}/{len(pairs)}"),
+            ):
+                db.write_matches(ids[names[i]], ids[names[j]], m[: matching.max_num_matches])
+        finally:
+            db.close()
+        self._verify_pairs(db_path, names, pairs, work)
+
+    def _verify_pairs(
+        self, db: Path, names: list[str], pairs: list[tuple[int, int]], work: Path
+    ) -> None:
+        """Geometric verification of already matched pairs, in chunks for progress reporting."""
+        stage = self.progress.stage(0.4, 0.85, "geometrická verifikácia")
+        chunk = max(len(pairs) // MATCH_CHUNKS, MIN_MATCH_CHUNK)
+        pairs_file = work / "pairs.txt"
+        for start in range(0, len(pairs), chunk):
+            stage.update(start / len(pairs), f"dvojica {start} z {len(pairs)}")
+            part = pairs[start : start + chunk]
+            pairs_file.write_text(
+                "".join(f"{names[i]} {names[j]}\n" for i, j in part), encoding="utf-8"
+            )
+            pycolmap.verify_matches(db, pairs_file, pycolmap.TwoViewGeometryOptions())
         stage.update(1.0, f"{len(pairs)} dvojíc")
 
     def _map_global(self, db: Path, images: Path, out: Path) -> list[pycolmap.Reconstruction]:
@@ -459,3 +525,16 @@ def _prior_focal_px(frame: dict) -> float | None:
         return None
     diag = float(np.hypot(frame["width"], frame["height"]))
     return round(f35 * diag / DIAG_35MM, 2)
+
+
+class _Timer:
+    """Wall-clock seconds of consecutive steps, for report.json."""
+
+    def __init__(self) -> None:
+        self.laps: dict[str, float] = {}
+        self._last = time.perf_counter()
+
+    def lap(self, name: str) -> None:
+        now = time.perf_counter()
+        self.laps[name] = round(now - self._last, 2)
+        self._last = now

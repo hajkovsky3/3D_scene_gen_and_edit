@@ -6,7 +6,7 @@ Fázy komunikujú iba cez súbory, takže každá skupina môže mať vlastné p
 | Prostredie | Fázy | Kľúčové balíky |
 |---|---|---|
 | `sp-core` | 00, 01, runner | opencv, pillow, pycolmap, numpy |
-| `sp-gs` | 02, 06, 11, 12 | torch, gsplat, viser, LaMa |
+| `sp-gs` | 02, 06, 11, 12 (+ 01 s GPU párovaním) | torch, gsplat, viser, LaMa, pycolmap |
 | `sp-seg` | 03, 04, 05, 09 | torch, Grounding DINO, SAM 2, open_clip, RAM++ |
 | `sp-llm` | 07 (VLM), 08 | transformers / vLLM, Qwen |
 | `sp-gen` | 10 | TRELLIS, diffusers (FLUX) |
@@ -43,7 +43,7 @@ apt-get install -y build-essential python3-venv python3-dev ninja-build cuda-too
 python3 -m venv ~/venvs/sp-gs && source ~/venvs/sp-gs/bin/activate
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 cd /mnt/c/Users/<user>/Documents/3D_scene_gen_and_edit
-pip install -e ".[dev,gs,ingest]"
+pip install -e ".[dev,gs,ingest,sfm]"   # sfm: fáza 01 s párovaním na GPU
 
 # 3. pred každým použitím (gsplat JIT potrebuje nvcc)
 export CUDA_HOME=/usr/local/cuda-13.0 PATH=/usr/local/cuda-13.0/bin:$PATH

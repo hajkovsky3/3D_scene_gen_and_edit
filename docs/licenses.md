@@ -25,7 +25,7 @@ Stav:
 | `pycolmap` 4.2 (wheel z PyPI) | 01 | BSD-3 | — | HRANIČNÉ (schválené) | wheel pribaľuje SuiteSparse: SPQR (GPL-2+), CHOLMOD (časti GPL-2+/LGPL-2.1+), ostatné BSD; ďalej Ceres (BSD), OpenImageIO (Apache 2.0), OpenBLAS (BSD). Autor schválil 2026-10-12 ako tranzitívnu binárnu závislosť externého nástroja: náš kód GPL kód neobsahuje ani nedistribuuje. Oficiálne binárky COLMAP majú to isté. |
 | VGGT (`VGGT-1B-Commercial`) | 01 alt | VGGT License | VGGT License, prístup cez formulár | HRANIČNÉ | pôvodný checkpoint `VGGT-1B` je nekomerčný |
 | gsplat 1.5 | 02, 06, 11, 12 | Apache 2.0 | — | OK | CUDA jadro sa kompiluje lokálne (JIT); obsahuje GLM (MIT) |
-| PyTorch, torchvision | 02, 06, 11, 12 | BSD-3 | — | OK | CUDA wheely pribaľujú knižnice NVIDIA (cuBLAS, cuDNN …) pod NVIDIA licenciou, len na beh |
+| PyTorch, torchvision | 01 (voliteľné GPU párovanie), 02, 06, 11, 12 | BSD-3 | — | OK | CUDA wheely pribaľujú knižnice NVIDIA (cuBLAS, cuDNN …) pod NVIDIA licenciou, len na beh |
 | CUDA Toolkit 13.0 | 02 (build gsplat) | NVIDIA EULA (proprietárna, bezplatná) | — | OK (systémový nástroj, schválené autorom 2026-10-14) | iba kompilátor `nvcc` a hlavičky na zostavenie gsplat, nič sa z neho nedistribuuje; bez neho sa nedá použiť žiadna CUDA knižnica |
 | torchmetrics | 02 (metriky) | Apache 2.0 | LPIPS lineárne vrstvy pribalené (BSD-2, pôvodný repozitár LPIPS) | OK | |
 | AlexNet (`torchvision`, `alexnet-owt-7be5be79.pth`) | 02 (LPIPS) | BSD-3 | BSD-3 (torchvision), trénované na ImageNet | OK | stiahnuté so súhlasom autora 2026-10-14, iba na meranie LPIPS; vypnuteľné `lpips: false` |

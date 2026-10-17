@@ -114,7 +114,7 @@ def test_video(tmp_path, texture):
         writer.write(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
     writer.release()
 
-    data = run(ws, video_fps=2, sharpness_window=3, min_frames=5)
+    data = run(ws, video_fps=2, sharpness_window=3, keyframe_motion=0, min_frames=5)
 
     check_contract(ws, data, 1600)
     frames = data["frames"]
@@ -126,6 +126,32 @@ def test_video(tmp_path, texture):
     assert all(f["source"] == "input/room.mp4" for f in frames)
     assert all(f["exif_focal_mm"] is None for f in frames)
     assert any(r["reason"] == "blur" for r in data["rejected"])
+
+
+def test_video_motion_keyframes(tmp_path, texture):
+    """keyframe_motion: frames follow camera motion, a still camera gives one per max gap."""
+    ws = make_ws(tmp_path)
+    path = ws.root / "input" / "pan.mp4"
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), 30, (W, H))
+    for i in range(300):  # 4 s still, then 6 s panning 10 px per frame
+        writer.write(cv2.cvtColor(crop(texture, max(0, i - 120) * 10), cv2.COLOR_RGB2BGR))
+    writer.release()
+
+    data = run(
+        ws,
+        keyframe_motion=0.1,
+        keyframe_max_gap_s=2.0,
+        sharpness_percentile_reject=0,
+        dedup_threshold=1.0,
+        min_frames=5,
+    )
+
+    check_contract(ws, data, 1600)
+    ts = [f["timestamp_s"] for f in data["frames"]]
+    # pan: 1800 px = 2.8 image widths (motion is relative to the long side) -> ~28 windows
+    assert sum(t < 4 for t in ts) <= 3
+    assert 20 <= sum(t >= 4 for t in ts) <= 36
+    assert max(b - a for a, b in itertools.pairwise(ts)) <= 2 * 2.0  # two windows at most
 
 
 def test_blur_gap_filling(tmp_path):

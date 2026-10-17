@@ -50,11 +50,23 @@ samostatný problém a dajú sa vylepšovať nezávisle.
 
 1. **Načítanie**: fotky cez Pillow (EXIF orientácia, ICC profil → sRGB), video cez
    `cv2.VideoCapture` (ffmpeg pribalený v OpenCV, LGPL; rotácia z metadát sa aplikuje
-   automaticky).
+   automaticky). S `video_hw_decode: true` sa skúsi dekódovanie na GPU
+   (`VIDEO_ACCELERATION_ANY`, napr. D3D11 na Windowse), pri neúspechu ffmpeg pokračuje na CPU.
+   Default vypnuté: na vývojovom počítači (GTX 1650, HEVC z telefónu) sa D3D11VA
+   neinicializuje a nič to nezrýchli.
 2. **Výber snímok z videa**: kandidáti sa vzorkujú s frekvenciou
-   `video_fps * sharpness_window` (z každého časového slotu prvá snímka), potom sa z každých
-   `sharpness_window` po sebe idúcich kandidátov vyberie najostrejší. Výsledok je približne
-   `video_fps` snímok za sekundu videa.
+   `video_fps * sharpness_window` (z každého časového slotu prvá snímka), potom sa z každého
+   okna vyberie najostrejší kandidát. Pre kandidáta sa počíta iba ostrosť na malej šedotónovej
+   kópii; konverzia, zmenšenie na `max_side` a JPEG (vo vláknach popri dekódovaní) iba pre víťaza
+   okna.
+   - `keyframe_motion: 0`: okno je `sharpness_window` po sebe idúcich kandidátov,
+     výsledok je približne `video_fps` snímok za sekundu videa.
+   - `keyframe_motion > 0` (default 0,12): okno je úsek **pohybu kamery** veľkosti `keyframe_motion`
+     (podiel dlhšej strany obrázka), najviac `keyframe_max_gap_s` sekúnd. Pohyb medzi
+     kandidátmi = medián posunu rohov sledovaných optickým tokom (pyramídový Lucas-Kanade
+     na 512 px; pri < 20 sledovaných rohoch posun z fázovej korelácie). Stojaca kamera dá
+     jednu snímku za `keyframe_max_gap_s`, rýchly pohyb viac snímok (ako výber keyframov
+     v SLAM). Medzi vybranými snímkami môže byť až dvojnásobok okna.
 3. **Ostrosť**: rozptyl Laplaciánu na zmenšenom šedotónovom obrázku. Prah je relatívny:
    snímka pod `sharpness_percentile_reject`-tým percentilom svojho videa je `blur`.
    Počíta sa zvlášť pre každé video (rôzne kamery majú rôznu škálu). Fotky sa podľa
@@ -85,8 +97,8 @@ samostatný problém a dajú sa vylepšovať nezávisle.
 |---|---|---|
 | `basic` (primárna) | OpenCV + Pillow, postup vyššie | Apache 2.0 / MIT-CMU (HPND) / LGPL (ffmpeg pribalený v OpenCV) |
 
-Alternatívy do budúcna: výber snímok podľa pokrytia scény (keyframe selection podľa optického
-toku), automatické maskovanie pohybujúcich sa objektov a ľudí.
+Alternatívy do budúcna: automatické maskovanie pohybujúcich sa objektov a ľudí.
+(Výber snímok podľa optického toku je v `basic` ako `keyframe_motion`.)
 
 ## Konfigurácia
 
@@ -103,6 +115,9 @@ ingest:
   blur_filter_photos: false
   blur_max_gap_s: 1.0        # 0 = vypnuté
   blur_gap_min_ratio: 0.3    # dieru nevypĺňať snímkou pod 0,3 × medián ostrosti
+  keyframe_motion: 0.12      # okná výberu podľa pohybu kamery (podiel dlhšej strany); 0 = podľa času
+  keyframe_max_gap_s: 2.0    # najdlhšie okno pri keyframe_motion
+  video_hw_decode: false     # GPU dekódovanie videa (skúsi, inak CPU)
 ```
 
 ## Hardvér
@@ -157,4 +172,14 @@ Inštalácia: `pip install -e ".[dev,ingest]"`.
   Po oprave (2026-10-16, `fast.yaml`): 225 snímok, 01 vyradil 10 odľahlých kamier → 211/225,
   02 PSNR 22.27 / SSIM 0.860. Bez dopĺňania medzier (194 kamier) bolo PSNR 23.96, ale na inej
   testovacej sade, takže prínos dopĺňania pre kvalitu zatiaľ nie je preukázaný.
+- [x] zrýchlenie (2026-10-17, *izba*, Windows): ostrosť kandidáta z malej šedotónovej kópie,
+  plné spracovanie iba víťaza okna, JPEG vo vláknach → 55,6 s → 45,0 s. Samotné dekódovanie
+  HEVC 1080p trvá 28,7 s a ffmpeg pri ňom využije ~1,8 jadra (rezerva: paralelné dekódovanie
+  úsekov videa, zatiaľ nie). HW dekódovanie (`video_hw_decode`) sa na GTX 1650 neinicializuje.
+- [x] výber snímok podľa pohybu kamery (`keyframe_motion`, 2026-10-17, *izba*): pri 0,12
+  rovnaký počet snímok ako časový výber (223 vs. 225), +6 s. Celý reťazec 00 → 01 (`fast`,
+  GPU, okná 5 + 5) → 02 (`fast`): PSNR / SSIM / LPIPS **22,83 / 0,865 / 0,371** oproti
+  22,57 / 0,860 / 0,402 s časovým výberom (oba testy na vlastnej testovacej sade, každý
+  8. pohľad; jedna scéna, preto default 0,12 treba potvrdiť na ďalšej scéne). Pri 0,05 / 0,08
+  vznikne viac snímok než `max_frames` (300).
 - [ ] doladenie prahov podľa úspešnosti registrácie v 01

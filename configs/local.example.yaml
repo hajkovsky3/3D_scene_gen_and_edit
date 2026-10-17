@@ -18,4 +18,5 @@ runners:
 
 phases:
   default: local
+  01_sfm: wsl_gs              # párovanie na GPU (PyTorch v sp-gs)
   02_reconstruction: wsl_gs

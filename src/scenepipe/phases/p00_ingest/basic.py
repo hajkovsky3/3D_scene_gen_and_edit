@@ -7,6 +7,7 @@ import json
 import logging
 import shutil
 from collections import Counter
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
@@ -26,6 +27,9 @@ REJECT_REASONS = {"unsupported_format", "unreadable", "blur", "duplicate", "over
 JPEG_QUALITY = 95
 SHARPNESS_SIDE = 512
 THUMB_SIZE = 64
+JPEG_WRITERS = 2  # threads encoding staged JPEGs while the video is decoded
+MOTION_MAX_CORNERS = 300
+MOTION_MIN_TRACKED = 20  # fewer tracked corners: motion from phase correlation instead
 
 # EXIF tags (Exif IFD 0x8769)
 _EXIF_IFD = 0x8769
@@ -56,7 +60,7 @@ class _Frame:
 class IngestBasic(Phase):
     phase = "00_ingest"
     impl = "basic"
-    impl_version = "2"
+    impl_version = "3"
     contract_version = 1
     defaults: ClassVar[dict[str, Any]] = {
         "video_fps": 3,
@@ -69,6 +73,9 @@ class IngestBasic(Phase):
         "blur_filter_photos": False,
         "blur_max_gap_s": 1.0,
         "blur_gap_min_ratio": 0.3,
+        "keyframe_motion": 0.12,
+        "keyframe_max_gap_s": 2.0,
+        "video_hw_decode": False,
     }
 
     @property
@@ -91,36 +98,10 @@ class IngestBasic(Phase):
         staging.mkdir(parents=True)
 
         stager = _Stager(staging, int(self.config["max_side"]))
-        rejected: list[dict[str, Any]] = []
-        videos: list[_Frame] = []
-        photos: list[_Frame] = []
-
-        files = _list_inputs(self.input_dir)
-        for n_file, path in enumerate(files):
-            rel = self.ws.rel(path)
-            ext = path.suffix.lower()
-            stage = self.progress.stage(
-                0.9 * n_file / len(files), 0.9 * (n_file + 1) / len(files), "načítanie vstupov"
-            )
-            stage.update(0.0, rel)
-            if ext in VIDEO_EXTS:
-                frames = self._load_video(path, rel, stager, stage)
-                if frames is None:
-                    rejected.append(_rej(rel, None, "unreadable"))
-                else:
-                    videos.extend(frames)
-            elif ext in PHOTO_EXTS:
-                frame = _load_photo(path, rel, stager)
-                if frame is None:
-                    rejected.append(_rej(rel, None, "unreadable"))
-                else:
-                    photos.append(frame)
-            else:
-                rejected.append(_rej(rel, None, "unsupported_format"))
-
-        if photos and all(f.exif_datetime for f in photos):
-            photos.sort(key=lambda f: (f.exif_datetime, f.source))
-        frames = videos + photos  # videos are already in path order, then time order
+        try:
+            frames, rejected = self._load_inputs(stager)
+        finally:
+            stager.close()  # all staged JPEGs are on disk from here on
 
         self.progress.update(0.9, "filtrovanie snímok", f"{len(frames)} kandidátov")
         frames = self._filter_blur(frames, rejected)
@@ -167,23 +148,72 @@ class IngestBasic(Phase):
         log.info("00_ingest: %d frames kept, %d rejected", len(entries), len(rejected))
         return {"frames": frames_json, "images": images_dir}
 
+    def _load_inputs(self, stager: _Stager) -> tuple[list[_Frame], list[dict[str, Any]]]:
+        rejected: list[dict[str, Any]] = []
+        videos: list[_Frame] = []
+        photos: list[_Frame] = []
+        files = _list_inputs(self.input_dir)
+        for n_file, path in enumerate(files):
+            rel = self.ws.rel(path)
+            ext = path.suffix.lower()
+            stage = self.progress.stage(
+                0.9 * n_file / len(files), 0.9 * (n_file + 1) / len(files), "načítanie vstupov"
+            )
+            stage.update(0.0, rel)
+            if ext in VIDEO_EXTS:
+                frames = self._load_video(path, rel, stager, stage)
+                if frames is None:
+                    rejected.append(_rej(rel, None, "unreadable"))
+                else:
+                    videos.extend(frames)
+            elif ext in PHOTO_EXTS:
+                frame = _load_photo(path, rel, stager)
+                if frame is None:
+                    rejected.append(_rej(rel, None, "unreadable"))
+                else:
+                    photos.append(frame)
+            else:
+                rejected.append(_rej(rel, None, "unsupported_format"))
+
+        if photos and all(f.exif_datetime for f in photos):
+            photos.sort(key=lambda f: (f.exif_datetime, f.source))
+        return videos + photos, rejected  # videos are already in path order, then time order
+
     def _load_video(
         self, path: Path, rel: str, stager: _Stager, stage: StageProgress
     ) -> list[_Frame] | None:
-        """Sample candidates at video_fps * window, keep the sharpest of each window."""
-        cap = cv2.VideoCapture(str(path))
-        if not cap.isOpened():
+        """Sample candidates at video_fps * window, keep the sharpest of each window.
+
+        A window is `sharpness_window` consecutive candidates or, with keyframe_motion > 0,
+        a stretch of camera motion of that size (see _MotionMeter), at most keyframe_max_gap_s
+        long. Candidates only get a small grayscale copy for the sharpness; the winner of a
+        window is converted, resized and staged.
+        """
+        cap = _open_video(path, bool(self.config["video_hw_decode"]))
+        if cap is None:
             return None
-        window = max(1, int(self.config["sharpness_window"]))
-        rate = float(self.config["video_fps"]) * window  # candidate slots per second
+        cfg = self.config
+        window = max(1, int(cfg["sharpness_window"]))
+        rate = float(cfg["video_fps"]) * window  # candidate slots per second
+        motion_step = float(cfg["keyframe_motion"])
+        max_gap = float(cfg["keyframe_max_gap_s"])
+        meter = _MotionMeter() if motion_step > 0 else None
         fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
         total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
 
         out: list[_Frame] = []
-        best: tuple[float, np.ndarray, int, float] | None = None  # sharpness, rgb, idx, t
+        best: tuple[float, np.ndarray, int, float] | None = None  # sharpness, bgr, idx, t
         best_window = -1
+        motion = 0.0  # accumulated camera motion since the start of the video
+        win_start = (0.0, 0.0)  # motion and time at the start of the current motion window
         last_slot = -1
         idx = -1
+
+        def emit() -> None:
+            sharp, bgr, i, ts = best
+            rgb = stager.resize(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
+            out.append(stager.stage(rgb, rel, i, ts, sharp, group=rel))
+
         try:
             while cap.grab():
                 idx += 1
@@ -198,19 +228,30 @@ class IngestBasic(Phase):
                 ok, bgr = cap.retrieve()
                 if not ok:
                     continue
-                rgb = stager.resize(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
-                sharp = _sharpness(rgb)
-                win = slot // window
-                if win != best_window and best is not None:
-                    out.append(stager.stage(best[1], rel, best[2], best[3], best[0], group=rel))
+                gray = cv2.cvtColor(_resize_max(bgr, SHARPNESS_SIDE), cv2.COLOR_BGR2GRAY)
+                sharp = _laplacian_var(gray)
+                if meter is None:
+                    win = slot // window
+                    new_window = win != best_window
+                    best_window = win
+                else:
+                    motion += meter.step(gray)
+                    new_window = (
+                        best is None
+                        or motion - win_start[0] >= motion_step
+                        or t - win_start[1] >= max_gap
+                    )
+                    if new_window:
+                        win_start = (motion, t)
+                if new_window and best is not None:
+                    emit()
                     best = None
-                best_window = win
                 if best is None or sharp > best[0]:
-                    best = (sharp, rgb, idx, t)
+                    best = (sharp, bgr, idx, t)
         finally:
             cap.release()
         if best is not None:
-            out.append(stager.stage(best[1], rel, best[2], best[3], best[0], group=rel))
+            emit()
         if idx < 0:
             return None
         return out
@@ -344,6 +385,17 @@ class _Stager:
         self.staging = staging
         self.max_side = max_side
         self.count = 0
+        self._pool = ThreadPoolExecutor(JPEG_WRITERS)  # Pillow releases the GIL while encoding
+        self._pending: list[Future] = []
+
+    def close(self) -> None:
+        """Wait until all staged JPEGs are written (re-raises write errors)."""
+        try:
+            for f in self._pending:
+                f.result()
+        finally:
+            self._pool.shutdown()
+            self._pending = []
 
     def resize(self, rgb: np.ndarray) -> np.ndarray:
         return _resize_max(rgb, self.max_side)
@@ -360,7 +412,8 @@ class _Stager:
     ) -> _Frame:
         path = self.staging / f"s{self.count:06d}.jpg"
         self.count += 1
-        Image.fromarray(rgb).save(path, quality=JPEG_QUALITY)
+        image = Image.fromarray(rgb)
+        self._pending.append(self._pool.submit(image.save, path, quality=JPEG_QUALITY))
         h, w = rgb.shape[:2]
         return _Frame(
             source=source,
@@ -431,8 +484,51 @@ def _resize_max(rgb: np.ndarray, max_side: int) -> np.ndarray:
 
 
 def _sharpness(rgb: np.ndarray) -> float:
-    gray = cv2.cvtColor(_resize_max(rgb, SHARPNESS_SIDE), cv2.COLOR_RGB2GRAY)
+    return _laplacian_var(cv2.cvtColor(_resize_max(rgb, SHARPNESS_SIDE), cv2.COLOR_RGB2GRAY))
+
+
+def _laplacian_var(gray: np.ndarray) -> float:
     return float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+
+def _open_video(path: Path, hw_decode: bool) -> cv2.VideoCapture | None:
+    """OpenCV capture; with hw_decode the GPU decoder is used if available (else software)."""
+    params = [cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_ANY] if hw_decode else []
+    cap = cv2.VideoCapture(str(path), cv2.CAP_FFMPEG, params)
+    if not cap.isOpened():
+        cap.release()
+        cap = cv2.VideoCapture(str(path))  # any other backend
+    if not cap.isOpened():
+        return None
+    return cap
+
+
+class _MotionMeter:
+    """Camera motion between consecutive video candidates, as a fraction of the image size.
+
+    Corners of the previous frame are tracked into the current one (pyramidal Lucas-Kanade);
+    the motion is their median displacement divided by the long image side. Unlike a global
+    shift this also grows when the camera moves forward. With too few trackable corners
+    (blank wall, heavy blur) the global shift from phase correlation is used instead.
+    """
+
+    def __init__(self) -> None:
+        self.prev: np.ndarray | None = None
+
+    def step(self, gray: np.ndarray) -> float:
+        prev, self.prev = self.prev, gray
+        if prev is None or prev.shape != gray.shape:
+            return 0.0
+        side = float(max(gray.shape))
+        corners = cv2.goodFeaturesToTrack(prev, MOTION_MAX_CORNERS, 0.01, 8)
+        if corners is not None and len(corners) >= MOTION_MIN_TRACKED:
+            moved, status, _ = cv2.calcOpticalFlowPyrLK(prev, gray, corners, None)
+            ok = status.ravel() == 1
+            if ok.sum() >= MOTION_MIN_TRACKED:
+                d = np.linalg.norm((moved - corners).reshape(-1, 2)[ok], axis=1)
+                return float(np.median(d)) / side
+        (dx, dy), _ = cv2.phaseCorrelate(prev.astype(np.float32), gray.astype(np.float32))
+        return float(np.hypot(dx, dy)) / side
 
 
 def _thumb(rgb: np.ndarray) -> np.ndarray:

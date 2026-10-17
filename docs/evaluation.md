@@ -17,7 +17,7 @@ ale **nesmú** sa stať súčasťou repozitára ani tréningových dát modulov.
 
 | Oblasť | Metrika |
 |---|---|
-| SfM (01) | podiel registrovaných snímok, reprojekčná chyba, čas |
+| SfM (01) | podiel registrovaných snímok, reprojekčná chyba, čas (`report.json` → `timings_s`); pri známych pózach chyba rotácie a polohy kamier po zarovnaní podobnosťou (`python -m scenepipe.eval.sfm_poses --scene X --ref-colmap <sparse>` alebo `--ref-scene Y`) |
 | Rekonštrukcia (02) | PSNR, SSIM, LPIPS na holdout pohľadoch; počet gaussiánov; VRAM; čas |
 | Segmentácia (04, 06) | mIoU 2D masiek; mIoU renderovaných 3D inštancií; počet inštancií vs. GT |
 | Graf (07) | presnosť labelov; precision/recall hrán *on*, *near* |

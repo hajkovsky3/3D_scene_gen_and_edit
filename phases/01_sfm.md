@@ -1,6 +1,6 @@
 # Fáza 01: Structure-from-Motion
 
-`contract_version: 1`
+`contract_version: 2`
 
 ## Účel
 
@@ -27,7 +27,9 @@ pretože vzťahy v grafe scény (napr. *on*) potrebujú vedieť, kde je hore.
 - `report.json` — `num_frames`, `num_registered`, `registered_ratio`, `num_points`,
   `mean_reprojection_error_px`, `mean_track_length`, `unregistered` (zoznam `frame_id`),
   `mapper` (ktorý mapper dal výsledok), `matcher`, `models` (počet snímok v každom nájdenom
-  modeli; berie sa najväčší), `warnings`.
+  modeli; berie sa najväčší), `warnings`; od verzie 2 aj `num_pairs` (počet párovaných
+  dvojíc), `match_device` (`cuda` | `cpu`) a `timings_s` (sekundy krokov `features`, `pairs`,
+  `matching`, `mapping`, `undistortion`, `export`).
 - `manifest.json`.
 
 ## Postup
@@ -45,13 +47,27 @@ pretože vzťahy v grafe scény (napr. *on*) potrebujú vedieť, kde je hore.
      `retrieval_num_neighbors` najpodobnejších snímok mimo okna (uzavretie slučiek).
      Podobnosť: bag-of-words nad SIFT deskriptormi samotnej scény (RootSIFT, k-means
      s `retrieval_num_words` slovami na `retrieval_sample` deskriptoroch, tf-idf, kosínus),
-     vlastný kód v numpy, nič sa nesťahuje. Dvojice sa zapíšu do `_work/pairs.txt`
-     a párujú cez `match_image_pairs`. Počet dvojíc rastie lineárne (~25 na snímku).
+     vlastný kód v numpy, nič sa nesťahuje. Dvojice sa zapíšu do `pairs.txt` (pracovný adresár)
+     a párujú cez `match_image_pairs`. Počet dvojíc rastie lineárne (~13 na snímku pri oknách 5 + 5; predtým 10 + 10, ~20 na snímku).
    - `auto`: `exhaustive` pri ≤ `auto_exhaustive_max` snímkach (default 100), inak `retrieval`.
    - `vocab_tree` a loop detection v COLMAP potrebujú stiahnuť vocabulary tree, zatiaľ nie sú zapnuté.
 
-   `exhaustive` a `retrieval` sa párujú po dávkach (~20 volaní `match_image_pairs` so zoznamom
-   dvojíc), aby sa dal hlásiť priebeh; výsledok je rovnaký ako pri jednom volaní.
+   Všetky matchery vyrobia zoznam dvojíc (aj `sequential`, rovnakou funkciou ako okno
+   v `retrieval`) a párujú sa po dávkach (~20 volaní), aby sa dal hlásiť priebeh.
+
+   **Párovanie na GPU** (`use_gpu: true` a PyTorch vidí CUDA GPU, napr. prostredie `sp-gs`):
+   vyhľadanie najbližších deskriptorov beží v PyTorch (`torch_match.py`) podľa rovnakých
+   pravidiel ako SIFT matcher COLMAPu (uhol normalizovaných deskriptorov ≤ `max_distance` 0,7,
+   ratio test 0,8, vzájomne najlepšia zhoda), zhody sa zapíšu do databázy a geometrickú
+   verifikáciu robí COLMAP (`verify_matches`). Dvojice jednej snímky sa počítajú naraz
+   (dávkové násobenie matíc do 512 MB). Zhody sa s CPU matcherom COLMAPu zhodujú na ~99 %
+   (pár zhôd navyše pri dvojiciach s < 15 zhodami, ktoré verifikácia aj tak zahodí).
+   Na GTX 1650: ~5 ms na dvojicu pri 4 096 bodoch, ~25 ms pri 8 192 (CPU COLMAP ~50 ms,
+   resp. ~180 ms). Bez CUDA sa páruje na CPU cez `match_image_pairs` ako predtým.
+
+   Databáza COLMAPu a pomocné súbory sú počas behu v systémovom temp adresári (lokálny disk),
+   nie v `01_sfm/_work/`: databáza sa zapisuje a číta pri každej dvojici a vo WSL je
+   `/mnt/c` cez 9p rádovo pomalší (verifikácia stála na I/O).
 
    `sift_max_image_size` zmenší obrázok pred extrakciou SIFT (rýchlejšia extrakcia aj párovanie,
    výstupné snímky a kamery sú v pôvodnom rozlíšení).
@@ -79,13 +95,13 @@ pretože vzťahy v grafe scény (napr. *on*) potrebujú vedieť, kde je hore.
    Výsledná sim(3) transformácia `x' = s R (x − c)` sa aplikuje na kamery aj body a uloží
    do `alignment.json`.
 8. Export `cameras.json`, `points.npz`, `report.json`. Pomocné súbory (databáza, modely
-   pred undistorciou) sú v `01_sfm/_work/` a na konci sa zmažú (`keep_work: true` ich nechá).
+   pred undistorciou) sú v dočasnom adresári a na konci sa zmažú (`keep_work: true` ich skopíruje do `01_sfm/_work/`).
 
 ## Implementácie
 
 | Názov | Popis | Licencia |
 |---|---|---|
-| `colmap` (primárna) | COLMAP 4.x cez `pycolmap` (wheel z PyPI, iba CPU); zatiaľ SIFT, sequential/exhaustive, global/incremental mapper | BSD; wheel pribaľuje SuiteSparse (časti GPL/LGPL) — HRANIČNÉ, pozri `docs/licenses.md` |
+| `colmap` (primárna) | COLMAP 4.x cez `pycolmap` (wheel z PyPI, iba CPU) + voliteľne párovanie v PyTorch na GPU; zatiaľ SIFT, sequential/exhaustive, global/incremental mapper | BSD; wheel pribaľuje SuiteSparse (časti GPL/LGPL) — HRANIČNÉ, pozri `docs/licenses.md` |
 | `vggt` (alternatíva) | feed-forward VGGT, export do COLMAP formátu, voliteľný BA; vhodné pri málo snímkach | VGGT License; **iba checkpoint `VGGT-1B-Commercial`** (pôvodný je nekomerčný) — hraničné, pozri `docs/licenses.md` |
 
 Iba ako **nekomerčné** alternatívy (nie primárna cesta, pozri `docs/licenses.md`):
@@ -104,11 +120,11 @@ sfm:
   fallback_incremental_below: 0.8
   single_camera: true       # true pre video z jedného telefónu
   align_up: floor_ransac    # camera_up | floor_ransac | none
-  use_gpu: true             # pycolmap z PyPI je iba CPU, ignoruje sa
+  use_gpu: true             # párovanie na GPU cez PyTorch, ak je CUDA; inak COLMAP na CPU
   max_num_features: 8192    # menej pre slabší HW
   sift_max_image_size: -1   # -1 = COLMAP default (3200)
-  sequential_overlap: 10
-  retrieval_num_neighbors: 10
+  sequential_overlap: 5
+  retrieval_num_neighbors: 5
   retrieval_num_words: 1024
   retrieval_sample: 100000
   auto_exhaustive_max: 100
@@ -122,7 +138,7 @@ Kým ich autor neschváli, implementácia pri nich skončí chybou.
 
 ## Hardvér
 
-COLMAP beží aj na CPU (pomalšie). GPU urýchli SIFT a matching. Pri 200 snímkach rádovo
+COLMAP beží aj na CPU (pomalšie). GPU (PyTorch) urýchli párovanie, SIFT extrakcia a verifikácia ostávajú na CPU. Pri 200 snímkach rádovo
 minúty až desiatky minút. VGGT potrebuje GPU, pamäť rastie s počtom snímok.
 
 ## Validácia výstupu
@@ -170,6 +186,32 @@ test: `tests/contracts/test_p01.py` (syntetická miestnosť so známymi kamerami
   1 024 px): 4 156 dvojíc namiesto 21 528, 194/208 registrovaných (93 %), 0,66 px, **5 min**
   namiesto 75 min s `exhaustive`. (Beh s dopĺňaním medzier v 00 hlásil 224/242, ale bol
   degenerovaný kvôli 5 odľahlým kamerám, pozri `phases/00_ingest.md`, Stav.)
+- [x] párovanie na GPU v PyTorch + verifikácia v COLMAPe, databáza v lokálnom temp adresári,
+  `timings_s` v reporte (2026-10-17, beh vo WSL v `sp-gs`, GTX 1650). Presnosť voči GT pózam
+  Mip-NeRF 360 (`python -m scenepipe.eval.sfm_poses`, medián chyby rotácie / polohy v % rozptylu
+  kamier; všetky behy registrovali všetky snímky):
+
+  | Scéna | Konfigurácia | Dvojice | Čas | Rotácia | Poloha |
+  |---|---|---|---|---|---|
+  | room (311) | pôvodne: exhaustive, 8 192, CPU | 48 205 | 3 h 10 min | 0,035° | 0,026 % |
+  | room | default, GPU (okná 10 + 10) | 6 509 | 19 min | 0,031° | 0,023 % |
+  | room | `fast`, GPU (10 + 10) | 6 448 | 9,2 min | 0,029° | 0,036 % |
+  | room | `fast`, GPU, okná 5 + 5 | 4 068 | 6,9 min | 0,045° | 0,043 % |
+  | room | `fast`, GPU, 2 048 bodov | 6 425 | 8,5 min | 0,049° | 0,046 % |
+  | counter (240) | pôvodne: exhaustive, 8 192, CPU | 28 680 | 4 h 23 min | 0,012° | 0,012 % |
+  | counter | default, GPU (10 + 10) | 4 663 | 26 min | 0,017° | 0,015 % |
+  | counter | `fast`, GPU (10 + 10) | 4 758 | 9,5 min | 0,020° | 0,023 % |
+  | counter | `fast`, GPU, okná 5 + 5 | 2 977 | 6,8 min | 0,021° | 0,024 % |
+  | counter | `fast`, GPU, 2 048 bodov | 4 825 | 4,4 min | 0,023° | 0,029 % |
+
+  Rozdiely sú v stotinách stupňa, default má preto okná 5 + 5. Menej bodov (2 048) ušetrí
+  málo, lebo extrakcia a mapping trvajú rovnako. *izba* (225 snímok, `fast`): pôvodne 365 s
+  (CPU, Windows) → 266 s (GPU, 10 + 10) → **171 s** (GPU, 5 + 5; párovanie + verifikácia 44 s,
+  extrakcia 45 s, mapping 59 s); 02 (`fast`) PSNR 22,57 / SSIM 0,860 / LPIPS 0,402 oproti
+  pôvodným 22,27 / 0,860 / 0,387. Pozor: úsek *izby* 33.–55. s umiestni každá konfigurácia
+  inak (aj exhaustive s 8 192 bodmi, 23 min), globálny mapper je tam nejednoznačný; zhoda póz
+  medzi behmi preto na *izbe* nie je meradlo kvality. Vo WSL je extrakcia SIFT ~1,5× pomalšia
+  než natívne na Windowse (61 vs. 40 s pri `fast`).
 - [ ] ALIKED / LightGlue / vocab tree (čaká na schválenie stiahnutia váh)
 - [ ] (voliteľné) implementácia `vggt`
 
