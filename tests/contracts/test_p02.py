@@ -15,6 +15,7 @@ if not torch.cuda.is_available():
 from scenepipe.core.gaussians import PLY_PROPERTIES, read_ply
 from scenepipe.core.workspace import Workspace
 from scenepipe.phases.p02_reconstruction.gsplat import (
+    REPO_ROOT,
     ReconstructionGsplat,
     split_views,
 )
@@ -28,6 +29,7 @@ def mcmc_run(tmp_path_factory):
     ws = Workspace.open(tmp_path_factory.mktemp("p02"), "room")
     make_sfm(ws)
     cfg = {"iterations": 600, "cap_max": 20000, "export_depth": True, "num_test_renders": 2}
+    cfg |= {"depth_reg": 0.0}  # the depth prior has its own test (needs the model weights)
     ReconstructionGsplat(ws, cfg).execute()
     return ws
 
@@ -80,12 +82,24 @@ def test_default_strategy_low_res(tmp_path):
     ws = Workspace.open(tmp_path, "room")
     make_sfm(ws)
     cfg = {"iterations": 300, "strategy": "default", "sh_degree": 1, "resolution_scale": 0.5}
-    cfg |= {"lpips": False, "test_every": 0}
+    cfg |= {"lpips": False, "test_every": 0, "depth_reg": 0.0}
     ReconstructionGsplat(ws, cfg).execute()
     report = load(ws, "report.json")
     assert report["test_frame_ids"] == [] and report["psnr"] is None
     assert report["eval_resolution"] == [W // 2, H // 2] and report["warnings"]
     assert read_ply(ws.root / "02_reconstruction" / "gaussians.ply", sh_degree=1).sh_degree == 1
+
+
+def test_depth_prior_short_run(tmp_path):
+    pytest.importorskip("transformers")
+    model_dir = REPO_ROOT / "checkpoints" / "huggingface"
+    if not (model_dir / "models--depth-anything--Depth-Anything-V2-Small-hf").is_dir():
+        pytest.skip("Depth Anything V2 Small not downloaded (see docs/licenses.md)")
+    ws = Workspace.open(tmp_path, "room")
+    make_sfm(ws)
+    cfg = {"iterations": 600, "cap_max": 20000, "lpips": False, "depth_reg": 0.05}
+    ReconstructionGsplat(ws, cfg).execute()
+    assert load(ws, "report.json")["psnr"] > 18.0  # same as without the prior (~20 dB)
 
 
 def test_split_views():

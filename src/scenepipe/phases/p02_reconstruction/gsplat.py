@@ -29,6 +29,7 @@ from scenepipe.core.render import from_params, render, to_params
 
 log = logging.getLogger(__name__)
 
+REPO_ROOT = Path(__file__).resolve().parents[4]
 REFERENCE_ITERATIONS = 30_000  # strategy schedules below are tuned for this many steps
 SSIM_LAMBDA = 0.2
 SH_DEGREE_INTERVAL = 1000
@@ -59,6 +60,11 @@ class ReconstructionGsplat(Phase):
         "seed": 0,
         "compile_ssim": True,
         "resolution_schedule": [[0.25, 0.25], [0.5, 0.5]],
+        "aniso_reg": 0.1,
+        "aniso_max_ratio": 10.0,
+        "depth_reg": 0.2,
+        "depth_model": "depth-anything/Depth-Anything-V2-Small-hf",
+        "depth_model_dir": "checkpoints/huggingface",
     }
 
     def inputs(self) -> dict[str, Path]:
@@ -97,8 +103,9 @@ class ReconstructionGsplat(Phase):
         scale = scene_scale(cams)
         params = self._init_params(scale)
         train_s = [scaled[c.frame_id] for c in train]
+        mono = self._mono_depth(train_s, images) if float(cfg["depth_reg"]) > 0 else None
         t0 = time.perf_counter()
-        self._train(params, train_s, images, scale)
+        self._train(params, train_s, images, scale, mono)
         train_time = time.perf_counter() - t0
 
         self.progress.update(TRAIN_END, "export PLY", f"{len(params['means'])} gaussiánov")
@@ -156,6 +163,7 @@ class ReconstructionGsplat(Phase):
         train: list[Camera],
         images: dict[str, torch.Tensor],
         scene_scale: float,
+        mono: dict[str, torch.Tensor] | None = None,
     ) -> None:
         cfg = self.config
         iters = int(cfg["iterations"])
@@ -179,6 +187,8 @@ class ReconstructionGsplat(Phase):
             optimizers["means"], gamma=0.01 ** (1.0 / max(iters, 1))
         )
         strategy, state = self._strategy(iters, scene_scale)
+        aniso_reg, aniso_ratio = float(cfg["aniso_reg"]), float(cfg["aniso_max_ratio"])
+        depth_reg = float(cfg["depth_reg"]) if mono is not None else 0.0
         strategy.check_sanity(params, optimizers)
 
         gen = torch.Generator().manual_seed(int(cfg["seed"]))
@@ -192,11 +202,12 @@ class ReconstructionGsplat(Phase):
             if (scale := schedule(step)) != 1.0:
                 cam, gt = _downscaled(cam, gt, scale)
             sh_degree = min(step // SH_DEGREE_INTERVAL, int(cfg["sh_degree"]))
-            rgb, _, _, info = render(
+            rgb, z, alpha, info = render(
                 params,
                 [cam],
                 sh_degree,
                 antialiased=bool(cfg["antialiased"]),
+                depth=depth_reg > 0,
                 absgrad=getattr(strategy, "absgrad", False),
             )
             if isinstance(strategy, DefaultStrategy):
@@ -206,6 +217,11 @@ class ReconstructionGsplat(Phase):
             if isinstance(strategy, MCMCStrategy):  # regularizers from the MCMC paper
                 loss = loss + 0.01 * torch.sigmoid(params["opacities"]).mean()
                 loss = loss + 0.01 * torch.exp(params["scales"]).mean()
+            if aniso_reg > 0:
+                loss = loss + aniso_reg * aniso_loss(params["scales"], aniso_ratio)
+            if depth_reg > 0:
+                target = _resized(mono[cam.frame_id].cuda(non_blocking=True), cam)
+                loss = loss + depth_reg * depth_corr_loss(z[0], alpha[0], target)
             loss.backward()
             for opt in optimizers.values():
                 opt.step()
@@ -226,6 +242,28 @@ class ReconstructionGsplat(Phase):
                 log.info(
                     "step %d/%d loss %.4f N=%d", step + 1, iters, loss.item(), len(params["means"])
                 )
+
+    @torch.no_grad()
+    def _mono_depth(
+        self, train: list[Camera], images: dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
+        """Relative inverse depth of every training view from a monocular depth model
+        (float16 on the CPU, at the model's output resolution). The model is freed afterwards."""
+        from transformers import AutoImageProcessor, AutoModelForDepthEstimation
+
+        name = self.config["depth_model"]
+        cache = REPO_ROOT / self.config["depth_model_dir"]
+        processor = AutoImageProcessor.from_pretrained(name, cache_dir=cache)
+        model = AutoModelForDepthEstimation.from_pretrained(name, cache_dir=cache).cuda().eval()
+        out = {}
+        for i, cam in enumerate(train):
+            self.progress.update(0.0, "odhad hĺbky", f"snímka {i + 1}/{len(train)}")
+            inp = processor(images=images[cam.frame_id].numpy(), return_tensors="pt").to("cuda")
+            out[cam.frame_id] = model(**inp).predicted_depth[0].half().cpu()
+        del model
+        torch.cuda.empty_cache()
+        log.info("monocular depth (%s) for %d views", name, len(out))
+        return out
 
     def _strategy(self, iters: int, scene_scale: float):
         """gsplat strategy with its schedule scaled to the iteration count."""
@@ -418,6 +456,38 @@ class _TrainSsim:
             log.warning("torch.compile of SSIM failed (%s), using the eager version", e)
             self.fn = ssim
             return ssim(img, ref)
+
+
+def aniso_loss(log_scales: torch.Tensor, max_ratio: float) -> torch.Tensor:
+    """Mean excess of longest / middle axis over max_ratio: penalizes needles, not flat disks
+    (a disk has a large longest / shortest ratio, which surfaces need)."""
+    s = torch.sort(torch.exp(log_scales), dim=1).values
+    return torch.relu(s[:, 2] / s[:, 1].clamp_min(1e-12) - max_ratio).mean()
+
+
+def depth_corr_loss(
+    z: torch.Tensor, alpha: torch.Tensor, mono: torch.Tensor, min_alpha: float = 0.5
+) -> torch.Tensor:
+    """1 - Pearson correlation between the rendered inverse depth and a monocular relative
+    inverse depth [H, W], over pixels covered by the gaussians. Invariant to the unknown scale
+    and shift of the monocular estimate (as in FSGS)."""
+    m = alpha.detach() > min_alpha
+    if int(m.sum()) < 16:
+        return z.new_zeros(())
+    x = 1 / z[m].clamp_min(1e-6)
+    y = mono[m].float()
+    x, y = x - x.mean(), y - y.mean()
+    return 1 - (x * y).sum() / (x.norm() * y.norm()).clamp_min(1e-12)
+
+
+def _resized(depth: torch.Tensor, cam: Camera) -> torch.Tensor:
+    """[h, w] map resized to the camera resolution [H, W]."""
+    if tuple(depth.shape) == (cam.height, cam.width):
+        return depth
+    small = depth.float()[None, None]
+    return torch.nn.functional.interpolate(
+        small, size=(cam.height, cam.width), mode="bilinear", align_corners=False
+    )[0, 0]
 
 
 def _resolution_schedule(schedule: list, iters: int):

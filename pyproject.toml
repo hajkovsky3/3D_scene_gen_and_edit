@@ -16,6 +16,8 @@ ingest = ["opencv-python-headless", "pillow"]
 sfm = ["pycolmap>=4.2,<4.3", "pillow"]
 # torch/torchvision with CUDA: install from the PyTorch index first (envs/README.md)
 gs = ["torch", "torchvision", "gsplat>=1.5,<1.6", "torchmetrics", "pillow"]
+# monocular depth prior of phase 02 (depth_reg > 0), Depth Anything V2 Small via transformers
+depth = ["transformers>=4.45"]
 monitor = ["customtkinter>=5.2,<5.3"]
 
 [tool.setuptools.packages.find]

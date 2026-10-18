@@ -28,6 +28,8 @@ Stav:
 | PyTorch, torchvision | 01 (voliteľné GPU párovanie), 02, 03, 07, 12, 13 | BSD-3 | — | OK | CUDA wheely pribaľujú knižnice NVIDIA (cuBLAS, cuDNN …) pod NVIDIA licenciou, len na beh |
 | CUDA Toolkit 13.0 | 02 (build gsplat) | NVIDIA EULA (proprietárna, bezplatná) | — | OK (systémový nástroj, schválené autorom 2026-10-14) | iba kompilátor `nvcc` a hlavičky na zostavenie gsplat, nič sa z neho nedistribuuje; bez neho sa nedá použiť žiadna CUDA knižnica |
 | torchmetrics | 02 (metriky) | Apache 2.0 | LPIPS lineárne vrstvy pribalené (BSD-2, pôvodný repozitár LPIPS) | OK | |
+| Depth Anything V2 **Small** (`depth-anything/Depth-Anything-V2-Small-hf`) | 02 (hĺbkový prior, `depth_reg`) | Apache 2.0 | Apache 2.0 (iba Small; Base/Large/Giant sú CC-BY-NC-4.0) | OK | 24,8 M parametrov, ~99 MB, stiahnuté so súhlasom autora 2026-10-18 do `checkpoints/huggingface`; citovať Yang et al. 2024 |
+| Hugging Face `transformers` 5.x (+ `huggingface_hub`, `safetensors`, `tokenizers`) | 02 (hĺbkový prior) | Apache 2.0 | — | OK | tranzitívne: `regex` (Apache 2.0), `hf-xet` (Apache 2.0), `httpx` (BSD-3), `tqdm` (MIT/MPL-2.0), `typer`, `click` (BSD/MIT); extra `depth` v `pyproject.toml` |
 | AlexNet (`torchvision`, `alexnet-owt-7be5be79.pth`) | 02 (LPIPS) | BSD-3 | BSD-3 (torchvision), trénované na ImageNet | OK | stiahnuté so súhlasom autora 2026-10-14, iba na meranie LPIPS; vypnuteľné `lpips: false` |
 | RAM++ | 04 | Apache 2.0 | OVERIŤ | OVERIŤ | |
 | Grounding DINO (Swin-T/B, open-source verzia) | 05 | Apache 2.0 | Apache 2.0 | OK | verzie 1.5/1.6 a DINO-X sú len API |

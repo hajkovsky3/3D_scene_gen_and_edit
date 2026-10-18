@@ -47,6 +47,17 @@ Voliteľné (ak `export_depth: true`):
    Plán densifikácie (začiatok, koniec, interval, reset opacity) sa škáluje podľa
    `iterations` / 30000, aby kratšie behy (testy, slabý HW) fungovali rozumne.
    Pri `mcmc` sa pridáva regularizácia 0.01 · mean(opacity) + 0.01 · mean(scale) (MCMC článok).
+   Regularizácia ihiel (`aniso_reg`, 0 = vypnuté): `aniso_reg · mean(max(0, s_max / s_mid − r))`,
+   `r` = `aniso_max_ratio`. Penalizuje pomer najdlhšej a **strednej** osi, nie najkratšej:
+   ploché disky na povrchoch sú žiadúce, ihly („hviezdičky“ z nových uhlov) nie.
+   (PhysGaussian penalizuje pomer najdlhšej a najkratšej osi, čo by trestalo aj disky.)
+   **Hĺbkový prior** (`depth_reg`, 0 = vypnuté): pred tréningom sa pre každý tréningový pohľad
+   odhadne relatívna inverzná hĺbka monokulárnym modelom (Depth Anything V2 Small, ~0,3 s na
+   snímku na GTX 1650; drží sa na CPU vo float16, model sa potom uvoľní). V každom kroku sa
+   renderuje aj očakávaná hĺbka a pridá sa `depth_reg · (1 − corr(1/z, d_mono))`: Pearsonova
+   korelácia cez pixely s alpha > 0,5, invariantná voči neznámej mierke a posunu odhadu (FSGS).
+   Gaussiány sa tak držia povrchov aj tam, kde fotky hĺbku neurčujú (jednofarebné steny, okraje
+   záberov), čo z nových uhlov ubúda tmavých škvŕn a floaterov.
 4. **Holdout**: pohľady s indexom 0, k, 2k, … (k = `test_every`, default 8) sú testovacie,
    nepoužívajú sa v tréningu. `test_every: 0` vypne holdout (všetky pohľady tréningové).
 5. **Export** do PLY v projektovom formáte (log-scale, logit-opacity, wxyz kvaternión).
@@ -89,6 +100,11 @@ reconstruction:
   seed: 0
   compile_ssim: true       # SSIM v loss cez torch.compile (rovnaká hodnota, ~4× rýchlejšie)
   resolution_schedule: [[0.25, 0.25], [0.5, 0.5]]  # coarse-to-fine; [] = vypnuté
+  aniso_reg: 0.1           # váha regularizácie ihiel; 0 = vypnuté
+  aniso_max_ratio: 10.0    # pomer najdlhšej a strednej osi, od ktorého sa penalizuje
+  depth_reg: 0.2           # váha hĺbkového prioru; 0 = vypnuté (netreba transformers ani model)
+  depth_model: depth-anything/Depth-Anything-V2-Small-hf   # iba Small je Apache 2.0
+  depth_model_dir: checkpoints/huggingface
 ```
 
 **Rýchlosť tréningu.** Na GTX 1650 (500k gaussiánov, 894×1590) zaberalo SSIM v loss
@@ -111,6 +127,9 @@ Preto:
 
 Vyžaduje CUDA GPU. Pri 1–3 mil. gaussiánov a rozlíšení ~1600 px ~ 8–12 GB VRAM, s MCMC
 a `resolution_scale: 0.5` sa dá zmestiť do ~4–6 GB. Čas: desiatky minút.
+Hĺbkový prior pridá ~0,3 s na tréningovú snímku na začiatku (model Small, ~100 MB VRAM, potom
+sa uvoľní) a ~50 MB VRAM počas tréningu; potrebuje extra `depth` (`transformers`) a stiahnuté
+váhy. Na stroji bez nich `--set depth_reg=0`.
 
 Prostredie `sp-gs` (pozri `envs/README.md`). Namerané na GTX 1650 (4 GB, WSL2), syntetická
 miestnosť 160×120, 21 tréningových pohľadov, 5000 iterácií:
@@ -177,7 +196,34 @@ Porovnanie na Mip-NeRF 360 scénach (room, counter, kitchen) s publikovanými č
   deterministický a rozdiely do ~0,4 dB sú šum. Spolu −45 % času na *izbe*, −20 % na counter
   (menšie snímky, menší podiel ceny za pixel) bez merateľnej straty kvality.
 - [ ] overenie na *counter* a *kitchen* s plným tréningom (30k), porovnanie s 3DGS s LPIPS(vgg)
-- [ ] regularizácia anizotropie proti ihlicovitým gaussiánom (prepínač v configu)
+- [x] regularizácia ihiel `aniso_reg` (2026-10-18, *m360_room*, `fast`: 7k krokov, 500k gaussiánov;
+  ihla = pomer najdlhšej a strednej osi > 10, viditeľná = navyše opacity > 0,3):
+
+  | Variant | PSNR | SSIM | LPIPS | Ihly | Viditeľné ihly | Max. pomer osí |
+  |---|---|---|---|---|---|---|
+  | bez regularizácie | 30,68 | 0,929 | 0,153 | 2,56 % | 0,88 % | 195 |
+  | `aniso_reg: 0.1` (default) | 30,65 | 0,929 | 0,154 | 0,03 % | 0,02 % | 17 |
+
+  Kvalita na testovacích pohľadoch sa nezmenila (rozdiel v rámci šumu ~0,4 dB), ihiel je ~85×
+  menej. Časy tréningu (573 s / 703 s) nie sú porovnateľné, GPU zdieľali iné behy.
+  Z pohľadov mimo trajektórie kamier je rozdiel okom malý: väčšinu artefaktov tam nerobia ihly,
+  ale zle určená geometria (pozri hĺbkový prior).
+- [x] hĺbkový prior `depth_reg` (2026-10-18, *m360_room*, `fast`, s `aniso_reg: 0.1`):
+
+  | `depth_reg` | PSNR | SSIM | LPIPS | Tréning | Špička VRAM |
+  |---|---|---|---|---|---|
+  | 0 | 30,65 | 0,929 | 0,154 | 703 s | 1 061 MB |
+  | 0,05 | 30,61 | 0,928 | 0,154 | 723 s (+ ~90 s odhad hĺbky) | 1 109 MB |
+  | **0,2** (default) | 30,27 | 0,926 | 0,156 | 672 s | 1 107 MB |
+
+  Testovacie pohľady ležia na trajektórii kamier, takže zlepšenie geometrie nezachytia.
+  Vizuálne porovnanie zo 4 pohľadov posunutých nahor a dozadu (0,3–0,8 jednotky, polomer
+  kamier 1,37): pri 0,05 zmizla väčšina tmavých škvŕn a čiernych pruhov; pri 0,2 jeden pohľad
+  zakryl béžový opar (prior príliš silný voči nepresnému odhadu hĺbky). Opar tesne pri stene
+  ostáva vo všetkých variantoch (pohľad z miesta, kde nebola žiadna fotka). Časy nie sú presne
+  porovnateľné (zdieľaná GPU). Autor pri prezeraní celých scén vo vieweri vybral 0,2 ako
+  najlepšie vyzerajúcu; za cenu −0,4 dB PSNR na testovacích pohľadoch.
+- [ ] metrika kvality z nových uhlov (bez referencie), aby sa prior dal ladiť číslom, nie okom
 - [ ] test kompatibility PLY so SuperSplat
 
 ## Zdroje
@@ -186,3 +232,7 @@ Porovnanie na Mip-NeRF 360 scénach (room, counter, kitchen) s publikovanými č
   (citovať ako metódu; kód len na porovnanie, nekomerčná licencia).
 - Ye et al.: gsplat: An Open-Source Library for Gaussian Splatting, 2024. https://github.com/nerfstudio-project/gsplat
 - Kheradmand et al.: 3D Gaussian Splatting as Markov Chain Monte Carlo, NeurIPS 2024.
+- Yang et al.: Depth Anything V2, NeurIPS 2024 (model Small, Apache 2.0).
+- Zhu et al.: FSGS: Real-Time Few-shot View Synthesis using Gaussian Splatting, ECCV 2024
+  (Pearsonova korelácia s monokulárnou hĺbkou).
+- Xie et al.: PhysGaussian, CVPR 2024 (regularizácia pomeru osí).
