@@ -1,4 +1,4 @@
-"""Rendering gaussians with gsplat (Apache 2.0). Shared by phases 02, 06, 11 and 12.
+"""Rendering gaussians with gsplat (Apache 2.0). Shared by phases 02, 07, 12 and 13.
 
 Requires torch + gsplat (environment `sp-gs`); imported lazily so `scenepipe.core` stays
 importable in environments without them. Parameters use the stored (pre-activation)

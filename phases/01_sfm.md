@@ -5,7 +5,7 @@
 ## Účel
 
 Z neusporiadaných snímok odhadnúť pozície a parametre kamier a riedky 3D pointcloud scény.
-Výstup slúži na inicializáciu gaussiánov (02), na lifting (06) a ako kamery pre renderovanie.
+Výstup slúži na inicializáciu gaussiánov (02), na vyčistenie gaussiánov (03), na lifting (07) a ako kamery pre renderovanie.
 Súčasťou fázy je aj **undistorcia snímok** a **zarovnanie scény s gravitáciou** (+Z hore),
 pretože vzťahy v grafe scény (napr. *on*) potrebujú vedieť, kde je hore.
 

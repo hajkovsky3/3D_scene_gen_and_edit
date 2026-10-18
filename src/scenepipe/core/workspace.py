@@ -9,19 +9,20 @@ PHASES: tuple[str, ...] = (
     "00_ingest",
     "01_sfm",
     "02_reconstruction",
-    "03_tagging",
-    "04_segmentation",
-    "05_mask_embedding",
-    "06_lifting",
-    "07_scene_graph",
-    "08_prompt_parsing",
-    "09_grounding",
-    "10_asset_generation",
-    "11_editing",
-    "12_rendering",
+    "03_refinement",
+    "04_tagging",
+    "05_segmentation",
+    "06_mask_embedding",
+    "07_lifting",
+    "08_scene_graph",
+    "09_prompt_parsing",
+    "10_grounding",
+    "11_asset_generation",
+    "12_editing",
+    "13_rendering",
 )
-BUILD_PHASES = PHASES[:8]
-EDIT_PHASES = PHASES[8:12]
+BUILD_PHASES = PHASES[:9]
+EDIT_PHASES = PHASES[9:13]
 
 
 @dataclass(frozen=True)

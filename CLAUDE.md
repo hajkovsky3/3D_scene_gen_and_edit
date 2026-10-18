@@ -13,8 +13,8 @@ textovými a obrázkovými promptmi (zmena farby, odstránenie, presun, výmena,
 
 Reťazec má dve časti:
 
-- **Build** (fázy 00–07): spustí sa raz pre scénu. Výsledkom je počiatočný stav scény `state/v000`.
-- **Edit loop** (fázy 08–12): spustí sa pre každý prompt. Zo stavu `vN` vytvorí stav `vN+1`.
+- **Build** (fázy 00–08): spustí sa raz pre scénu. Výsledkom je počiatočný stav scény `state/v000`.
+- **Edit loop** (fázy 09–13): spustí sa pre každý prompt. Zo stavu `vN` vytvorí stav `vN+1`.
 
 Prehľad fáz, DAG závislostí a tabuľka vstupov a výstupov: `phases/README.md`.
 Formáty súborov a konvencie (súradnice, ID, stav scény): `docs/data-contracts.md`.
@@ -130,7 +130,7 @@ ruff check src tests && ruff format src tests
 Vývojový počítač je slabší, prístup k výkonnejšej GPU sa ešte rieši. Preto:
 
 - každá fáza musí mať parameter na zníženie nárokov (rozlíšenie, počet snímok, veľkosť modelu),
-- ťažké fázy (02, 04, 07 captioning, 08, 10, 11) písať tak, aby sa dali spustiť samostatne
+- ťažké fázy (02, 05, 08 captioning, 09, 11, 12) písať tak, aby sa dali spustiť samostatne
   na inom stroji: stačí skopírovať vstupné súbory a výstupy vrátiť späť,
 - odhadované nároky na VRAM sú v každom `phases/XX_*.md`,
 - `configs/fast.yaml` je rýchly profil na vývoj (prekrýva len niektoré kľúče z `default.yaml`):

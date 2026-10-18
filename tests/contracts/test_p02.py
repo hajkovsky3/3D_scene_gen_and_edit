@@ -5,7 +5,7 @@ import json
 import numpy as np
 import pytest
 from PIL import Image
-from synthetic_room import build_room, orbit_cameras, render, sample_points
+from synthetic_room import make_sfm
 
 torch = pytest.importorskip("torch")
 pytest.importorskip("gsplat")
@@ -19,48 +19,8 @@ from scenepipe.phases.p02_reconstruction.gsplat import (
     split_views,
 )
 
-W, H, F = 160, 120, 115.0
+W, H = 160, 120
 N_VIEWS = 24
-
-
-def make_sfm(ws: Workspace) -> None:
-    """Write a 01_sfm output (cameras.json, images_undistorted, points.npz) with GT poses."""
-    out = ws.root / "01_sfm"
-    (out / "images_undistorted").mkdir(parents=True)
-    rects = build_room()
-    cams = []
-    for i, w2c in enumerate(orbit_cameras(N_VIEWS), start=1):
-        fid = f"f{i:06d}"
-        img = render(rects, w2c, W, H, F)
-        Image.fromarray(img).save(out / "images_undistorted" / f"{fid}.jpg", quality=95)
-        cams.append(
-            {
-                "frame_id": fid,
-                "image": f"01_sfm/images_undistorted/{fid}.jpg",
-                "width": W,
-                "height": H,
-                "fx": F,
-                "fy": F,
-                "cx": W / 2,
-                "cy": H / 2,
-                "world_to_camera": w2c.tolist(),
-            }
-        )
-    data = {
-        "contract_version": 1,
-        "convention": "opencv_world_to_camera",
-        "up_axis": "+z",
-        "cameras": cams,
-    }
-    (out / "cameras.json").write_text(json.dumps(data), encoding="utf-8")
-    xyz, rgb = sample_points(rects, 5000)
-    np.savez_compressed(
-        out / "points.npz",
-        xyz=xyz,
-        rgb=rgb,
-        error=np.zeros(len(xyz), np.float32),
-        track_len=np.full(len(xyz), 3, np.int32),
-    )
 
 
 @pytest.fixture(scope="module")

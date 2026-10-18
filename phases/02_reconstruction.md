@@ -5,7 +5,8 @@
 ## Účel
 
 Natrénovať fotorealistickú reprezentáciu scény ako množinu 3D gaussiánov. Je to **geometrická
-vrstva**, nad ktorou pracuje lifting (06), graf (07), úprava (11) aj renderovanie (12).
+vrstva**, nad ktorou po vyčistení (03) pracuje lifting (07), graf (08), úprava (12) aj
+renderovanie (13).
 V pôvodnom návrhu to bola posledná fáza; je presunutá sem, lebo všetko ostatné ju potrebuje.
 
 ## Kontrakt
@@ -29,7 +30,7 @@ V pôvodnom návrhu to bola posledná fáza; je presunutá sem, lebo všetko ost
 Voliteľné (ak `export_depth: true`):
 - `depth/<frame_id>.npy` — `float16[H,W]`, očakávaná hĺbka (z-depth v kamerovom rámci)
   pre každý tréningový pohľad, v **plnom rozlíšení snímky z `cameras.json`** (nezávisle od
-  `resolution_scale`), 0 tam, kde sa nič nevyrenderovalo. Môže sa hodiť fázam 06, 07 a 11
+  `resolution_scale`), 0 tam, kde sa nič nevyrenderovalo. Môže sa hodiť fázam 07, 08 a 12
   (napr. ako náhrada mono-depth).
 
 ## Postup
@@ -128,9 +129,9 @@ miestnosť 160×120, 21 tréningových pohľadov, 5000 iterácií:
 
 ## Riziká a otvorené otázky
 
-- Floatery a „plávajúce“ gaussiány pri okrajoch scény → zhoršia lifting aj bounding boxy v 07.
-  Možné riešenie: orezanie gaussiánov mimo objemu pokrytého kamerami.
-- Veľké gaussiány pozadia pretínajú viac objektov → nejednoznačné priradenie v 06.
+- Floatery a „plávajúce“ gaussiány pri okrajoch scény → zhoršia lifting aj bounding boxy v 08.
+  Orezanie hotových gaussiánov rieši fáza 03; tu ostáva prevencia počas tréningu (regularizácia).
+- Veľké gaussiány pozadia pretínajú viac objektov → nejednoznačné priradenie v 07.
   Zvážiť obmedzenie maximálnej mierky.
 - Kompatibilita formátu SH (poradie `f_rest`) s externými viewermi — otestovať v SuperSplat.
 
@@ -176,7 +177,7 @@ Porovnanie na Mip-NeRF 360 scénach (room, counter, kitchen) s publikovanými č
   deterministický a rozdiely do ~0,4 dB sú šum. Spolu −45 % času na *izbe*, −20 % na counter
   (menšie snímky, menší podiel ceny za pixel) bez merateľnej straty kvality.
 - [ ] overenie na *counter* a *kitchen* s plným tréningom (30k), porovnanie s 3DGS s LPIPS(vgg)
-- [ ] orezanie floaterov mimo objemu kamier (pozri Riziká)
+- [ ] regularizácia anizotropie proti ihlicovitým gaussiánom (prepínač v configu)
 - [ ] test kompatibility PLY so SuperSplat
 
 ## Zdroje

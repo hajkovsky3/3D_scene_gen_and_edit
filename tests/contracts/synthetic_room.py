@@ -1,4 +1,4 @@
-"""Tiny ray-casting renderer of a textured box room with two boxes, for SfM tests.
+"""Tiny ray-casting renderer of a textured box room with two boxes, for SfM and reconstruction tests.
 
 World: +Z up, floor at z=0. Cameras use the OpenCV convention (x right, y down, z forward)
 and the COLMAP pixel convention (pixel centers at +0.5).
@@ -6,10 +6,12 @@ and the COLMAP pixel convention (pixel centers at +0.5).
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 import cv2
 import numpy as np
+from PIL import Image
 
 PX_PER_M = 150
 
@@ -138,3 +140,43 @@ def orbit_cameras(n: int, radius: float = 1.7, height: float = 1.4) -> list[np.n
         c = np.array([radius * np.cos(a), radius * np.sin(a), height])
         cams.append(look_at(c, np.array([0.0, 0.0, 0.4])))
     return cams
+
+
+def make_sfm(ws, n_views: int = 24, w: int = 160, h: int = 120, f: float = 115.0) -> None:
+    """Write a 01_sfm output (cameras.json, images_undistorted, points.npz) with GT poses."""
+    out = ws.root / "01_sfm"
+    (out / "images_undistorted").mkdir(parents=True)
+    rects = build_room()
+    cams = []
+    for i, w2c in enumerate(orbit_cameras(n_views), start=1):
+        fid = f"f{i:06d}"
+        img = render(rects, w2c, w, h, f)
+        Image.fromarray(img).save(out / "images_undistorted" / f"{fid}.jpg", quality=95)
+        cams.append(
+            {
+                "frame_id": fid,
+                "image": f"01_sfm/images_undistorted/{fid}.jpg",
+                "width": w,
+                "height": h,
+                "fx": f,
+                "fy": f,
+                "cx": w / 2,
+                "cy": h / 2,
+                "world_to_camera": w2c.tolist(),
+            }
+        )
+    data = {
+        "contract_version": 1,
+        "convention": "opencv_world_to_camera",
+        "up_axis": "+z",
+        "cameras": cams,
+    }
+    (out / "cameras.json").write_text(json.dumps(data), encoding="utf-8")
+    xyz, rgb = sample_points(rects, 5000)
+    np.savez_compressed(
+        out / "points.npz",
+        xyz=xyz,
+        rgb=rgb,
+        error=np.zeros(len(xyz), np.float32),
+        track_len=np.full(len(xyz), 3, np.int32),
+    )

@@ -20,8 +20,9 @@ import torch
 from gsplat import DefaultStrategy, MCMCStrategy
 from PIL import Image
 
-from scenepipe.core.cameras import Camera, load_cameras
+from scenepipe.core.cameras import Camera, load_cameras, scene_scale
 from scenepipe.core.gaussians import Gaussians, read_ply, rgb_to_sh_dc, write_ply
+from scenepipe.core.images import load_image
 from scenepipe.core.metrics import Lpips, psnr, ssim, ssim_shifted
 from scenepipe.core.phase import ContractError, Phase, register
 from scenepipe.core.render import from_params, render, to_params
@@ -93,11 +94,11 @@ class ReconstructionGsplat(Phase):
             h, w = images[c.frame_id].shape[:2]
             scaled[c.frame_id] = c.scaled(w, h)
 
-        scene_scale = camera_scene_scale(cams)
-        params = self._init_params(scene_scale)
+        scale = scene_scale(cams)
+        params = self._init_params(scale)
         train_s = [scaled[c.frame_id] for c in train]
         t0 = time.perf_counter()
-        self._train(params, train_s, images, scene_scale)
+        self._train(params, train_s, images, scale)
         train_time = time.perf_counter() - t0
 
         self.progress.update(TRAIN_END, "export PLY", f"{len(params['means'])} gaussiánov")
@@ -111,7 +112,7 @@ class ReconstructionGsplat(Phase):
         if cfg["export_depth"]:
             outs["depth"] = self._export_depth(params, train)
 
-        report = self._report(g, train_s, test, per_view, train_time, scene_scale)
+        report = self._report(g, train_s, test, per_view, train_time, scale)
         outs["report"] = self.out_dir / "report.json"
         outs["report"].write_text(json.dumps(report, indent=2), encoding="utf-8")
         return outs
@@ -119,7 +120,7 @@ class ReconstructionGsplat(Phase):
     def _load_image(self, cam: Camera) -> torch.Tensor:
         """uint8 [H,W,3] on the CPU at the training resolution."""
         s = float(self.config["resolution_scale"])
-        return load_image(self.ws.abs(cam.image), s)
+        return torch.from_numpy(load_image(self.ws.abs(cam.image), s))
 
     def _init_params(self, scene_scale: float) -> torch.nn.ParameterDict:
         cfg = self.config
@@ -447,21 +448,6 @@ def split_views(cams: list[Camera], test_every: int) -> tuple[list[Camera], list
     test = [c for i, c in enumerate(cams) if i % test_every == 0]
     train = [c for i, c in enumerate(cams) if i % test_every != 0]
     return train, test
-
-
-def camera_scene_scale(cams: list[Camera]) -> float:
-    """Max camera distance from the mean camera center, x1.1 (gsplat convention)."""
-    centers = np.stack([c.center for c in cams])
-    return float(np.linalg.norm(centers - centers.mean(0), axis=1).max() * 1.1) or 1.0
-
-
-def load_image(path: Path, scale: float) -> torch.Tensor:
-    with Image.open(path) as im:
-        im = im.convert("RGB")
-        if scale != 1.0:
-            size = (max(round(im.width * scale), 1), max(round(im.height * scale), 1))
-            im = im.resize(size, Image.Resampling.BOX if scale < 1 else Image.Resampling.BICUBIC)
-        return torch.from_numpy(np.asarray(im).copy())
 
 
 def knn_mean_dist(xyz: torch.Tensor, k: int = 3, max_elems: int = 1 << 25) -> torch.Tensor:

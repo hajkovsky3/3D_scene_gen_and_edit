@@ -11,8 +11,8 @@ from scenepipe.core.workspace import BUILD_PHASES, EDIT_PHASES, PHASES, Workspac
 def test_phase_dirs(tmp_path):
     ws = Workspace.open(tmp_path, "demo")
     assert ws.phase_dir("01_sfm") == tmp_path / "demo" / "01_sfm"
-    assert ws.phase_dir("11_editing", "e001") == tmp_path / "demo" / "edits" / "e001" / "11_editing"
-    assert len(PHASES) == 13 and len(BUILD_PHASES) == 8 and len(EDIT_PHASES) == 4
+    assert ws.phase_dir("12_editing", "e001") == tmp_path / "demo" / "edits" / "e001" / "12_editing"
+    assert len(PHASES) == 14 and len(BUILD_PHASES) == 9 and len(EDIT_PHASES) == 4
 
 
 def random_gaussians(n: int, sh_degree: int, seed: int = 0) -> Gaussians:

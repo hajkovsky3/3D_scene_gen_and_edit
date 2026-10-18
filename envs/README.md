@@ -6,10 +6,10 @@ Fázy komunikujú iba cez súbory, takže každá skupina môže mať vlastné p
 | Prostredie | Fázy | Kľúčové balíky |
 |---|---|---|
 | `sp-core` | 00, 01, runner | opencv, pillow, pycolmap, numpy |
-| `sp-gs` | 02, 06, 11, 12 (+ 01 s GPU párovaním) | torch, gsplat, viser, LaMa, pycolmap |
-| `sp-seg` | 03, 04, 05, 09 | torch, Grounding DINO, SAM 2, open_clip, RAM++ |
-| `sp-llm` | 07 (VLM), 08 | transformers / vLLM, Qwen |
-| `sp-gen` | 10 | TRELLIS, diffusers (FLUX) |
+| `sp-gs` | 02, 03, 07, 12, 13 (+ 01 s GPU párovaním) | torch, gsplat, viser, LaMa, pycolmap |
+| `sp-seg` | 04, 05, 06, 10 | torch, Grounding DINO, SAM 2, open_clip, RAM++ |
+| `sp-llm` | 08 (VLM), 09 | transformers / vLLM, Qwen |
+| `sp-gen` | 11 | TRELLIS, diffusers (FLUX) |
 
 Balík `scenepipe` (jadro) sa inštaluje do každého prostredia (`pip install -e .`), aby fázy
 zdieľali I/O kód a kontrakty. Runner spúšťa fázu cez `conda run -n <env>` alebo podobne.
@@ -23,7 +23,7 @@ python -m venv .venv            # Python 3.11+ (na Windowse overené 3.14)
 pip install -e ".[dev,ingest,sfm]"
 ```
 
-## `sp-gs` (fázy 02, 06, 11, 12)
+## `sp-gs` (fázy 02, 03, 07, 12, 13)
 
 gsplat má hotové wheely iba pre Python 3.10 a starý PyTorch, preto sa jeho CUDA jadro
 kompiluje lokálne (JIT pri prvom použití, ~6 min). Na Windowse sa to robí vo **WSL2**

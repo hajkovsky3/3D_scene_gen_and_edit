@@ -96,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--workspace", type=Path, default=REPO_ROOT / "workspace")
     run.add_argument("--profile", default="default", help="configs/<profile>.yaml overlay")
     run.add_argument("--set", dest="overrides", action="append", default=[], metavar="KEY=VAL")
-    run.add_argument("--edit", dest="edit_id", help="edit id (phases 08-11)")
+    run.add_argument("--edit", dest="edit_id", help="edit id (phases 09-12)")
     args = ap.parse_args(argv)
 
     logging.basicConfig(

@@ -66,3 +66,9 @@ def load_cameras(path: Path) -> list[Camera]:
         )
         for c in data["cameras"]
     ]
+
+
+def scene_scale(cams: list[Camera]) -> float:
+    """Max camera distance from the mean camera center, x1.1 (gsplat convention)."""
+    centers = np.stack([c.center for c in cams])
+    return float(np.linalg.norm(centers - centers.mean(0), axis=1).max() * 1.1) or 1.0

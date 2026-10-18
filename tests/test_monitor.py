@@ -17,7 +17,7 @@ NOW = datetime(2026, 10, 16, 12, 0, tzinfo=UTC)
 
 
 class DummyPhase(Phase):
-    phase = "03_tagging"
+    phase = "04_tagging"
     impl = "dummy"
     defaults: ClassVar[dict] = {"fail": False}
 
@@ -72,15 +72,15 @@ def test_progress_write_failure_never_raises(tmp_path, monkeypatch):
 def test_execute_reports_done_and_failure(tmp_path):
     ws = Workspace.open(tmp_path, "demo")
     DummyPhase(ws, {}).execute()
-    done = read_progress(ws.phase_dir("03_tagging"))
+    done = read_progress(ws.phase_dir("04_tagging"))
     assert done["status"] == "done" and done["fraction"] == 1.0
-    assert phase_status("03_tagging", ws.phase_dir("03_tagging"), NOW)["status"] == "done"
+    assert phase_status("04_tagging", ws.phase_dir("04_tagging"), NOW)["status"] == "done"
 
     with pytest.raises(RuntimeError):
         DummyPhase(ws, {"fail": True}).execute()
-    d = ws.phase_dir("03_tagging")
+    d = ws.phase_dir("04_tagging")
     assert not (d / "manifest.json").exists()  # stale manifest removed at start
-    st = phase_status("03_tagging", d, NOW)
+    st = phase_status("04_tagging", d, NOW)
     assert st["status"] == "failed" and "boom" in st["error"]
 
 
@@ -122,16 +122,16 @@ def test_scene_status_old_runs_and_edits(tmp_path):
                 "finished_at": "2026-10-16T10:01:12+00:00"}  # fmt: skip
     (d00 / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     (d00 / "frames.json").write_text(json.dumps({"frames": [{}] * 3, "rejected": [{}]}), "utf-8")
-    write_progress(root / "edits" / "e001" / "11_editing", "running", 0.5, NOW, NOW)
+    write_progress(root / "edits" / "e001" / "12_editing", "running", 0.5, NOW, NOW)
 
     assert list_scenes(tmp_path) == ["room"]
     st = scene_status(tmp_path, "room", NOW)
     by_id = {p["id"]: p for p in st["phases"]}
-    assert st["edit_id"] == "e001" and len(st["phases"]) == 13
+    assert st["edit_id"] == "e001" and len(st["phases"]) == 14
     assert by_id["00_ingest"]["status"] == "done" and by_id["00_ingest"]["elapsed_s"] == 72
     assert by_id["00_ingest"]["summary"] == [["snímky", "3"], ["vyradené", "1"]]
     assert by_id["01_sfm"]["status"] == "pending"
-    assert by_id["11_editing"]["status"] == "running"
+    assert by_id["12_editing"]["status"] == "running"
 
 
 def test_window_smoke(tmp_path):
@@ -166,7 +166,7 @@ def test_stop_is_recorded(tmp_path):
 
     with pytest.raises(KeyboardInterrupt):
         Interrupted(ws, {}).execute()
-    st = phase_status("03_tagging", ws.phase_dir("03_tagging"), NOW)
+    st = phase_status("04_tagging", ws.phase_dir("04_tagging"), NOW)
     assert st["status"] == "stopped" and st["error"] == "zastavené (SIGTERM)"
 
     d = tmp_path / "x" / "02_reconstruction"  # killed from outside: still "running" on disk
@@ -182,7 +182,7 @@ def test_cli_config_profiles_and_implemented():
     assert load_config("01_sfm")["matcher"] == "auto"
     assert load_config("01_sfm", "fast")["matcher"] == "retrieval"
     assert load_config("01_sfm", "fast", ["matcher=exhaustive"])["matcher"] == "exhaustive"
-    assert is_implemented("00_ingest") and not is_implemented("09_grounding")
+    assert is_implemented("00_ingest") and not is_implemented("10_grounding")
 
 
 def test_runner_commands_and_pipeline(tmp_path):

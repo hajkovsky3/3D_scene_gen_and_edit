@@ -1,4 +1,4 @@
-"""Image metrics shared by phases 02, 11 and 12 (torch; environment `sp-gs`).
+"""Image metrics shared by phases 02, 12 and 13 (torch; environment `sp-gs`).
 
 PSNR and SSIM follow the usual 3DGS evaluation (images in [0, 1], SSIM with an 11x11
 gaussian window, sigma 1.5). LPIPS uses torchmetrics with the AlexNet backbone, as gsplat

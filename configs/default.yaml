@@ -59,7 +59,22 @@ reconstruction:
   compile_ssim: true       # SSIM v loss cez torch.compile (rovnaká hodnota, rýchlejšie)
   resolution_schedule: [[0.25, 0.25], [0.5, 0.5]]  # coarse-to-fine: prvá 1/4 krokov na 1/4 rozlíšenia, druhá na 1/2; [] = vypnuté
 
-# --- 03_tagging ---
+# --- 03_refinement ---
+refinement:
+  impl: prune              # prune | none (iba skopíruje gaussiány z 02)
+  crop: false              # odstrániť gaussiány mimo kvádra okolo bodov SfM; vyreže aj výhľad z okna a odrazy v podlahe
+  crop_quantile: 0.01      # rozsah kvádra: kvantil..1-kvantil bodov SfM pozdĺž každej osi
+  crop_margin: 0.1         # rezerva na každej strane, podiel rozsahu kvádra
+  min_opacity: 0.02        # odstrániť takmer priehľadné gaussiány (sigmoid(opacity) < hodnota); 0 = vypnuté
+  min_views: 3             # odstrániť gaussiány, ktoré nezasahujú do záberu aspoň toľkých tréningových kamier; 0 = vypnuté
+  max_scale_frac: 0        # odstrániť gaussiány s najdlhšou osou > podiel polomeru kamier (napr. 0.5); 0 = vypnuté, zasahuje aj steny
+  max_aniso: 0             # pomer najdlhšej a strednej osi (napr. 10); 0 = vypnuté, bez dotréningu robí medzery
+  aniso_action: clamp      # clamp = skrátiť najdlhšiu os na limit | remove = odstrániť
+  eval: true               # PSNR/SSIM/LPIPS pred a po na testovacích pohľadoch z 02
+  lpips: true
+  num_test_renders: 8
+
+# --- 04_tagging ---
 tagging:
   impl: ram_plus
   sample_frames: 30
@@ -69,7 +84,7 @@ tagging:
   blacklist_file: configs/tag_blacklist.txt
   synonyms_file: configs/tag_synonyms.yaml
 
-# --- 04_segmentation ---
+# --- 05_segmentation ---
 segmentation:
   impl: gdino_sam2
   gdino_model: swint_ogc
@@ -82,7 +97,7 @@ segmentation:
   min_area_frac: 0.001
   max_masks_per_frame: 100
 
-# --- 05_mask_embedding ---
+# --- 06_mask_embedding ---
 mask_embedding:
   impl: openclip
   model: ViT-H-14
@@ -93,7 +108,7 @@ mask_embedding:
   batch_size: 64
   compute_label_scores: true
 
-# --- 06_lifting ---
+# --- 07_lifting ---
 lifting:
   impl: gsplat_vote
   mask_batch: 32
@@ -107,7 +122,7 @@ lifting:
   min_views: 3
   outlier: dbscan          # dbscan | statistical | none
 
-# --- 07_scene_graph ---
+# --- 08_scene_graph ---
 scene_graph:
   impl: geometric_vlm
   vlm: Qwen/Qwen2.5-VL-7B-Instruct
@@ -119,7 +134,7 @@ scene_graph:
   near_delta_rel: 0.05
   semantic_relations: false
 
-# --- 08_prompt_parsing ---
+# --- 09_prompt_parsing ---
 prompt_parsing:
   impl: llm_local
   model: Qwen/Qwen3-8B
@@ -129,7 +144,7 @@ prompt_parsing:
   max_retries: 1
   include_scene_summary: true
 
-# --- 09_grounding ---
+# --- 10_grounding ---
 grounding:
   impl: clip_graph
   w_clip: 1.0
@@ -139,7 +154,7 @@ grounding:
   ambiguity_margin: 0.05
   reference_view: auto        # auto | <frame_id>
 
-# --- 10_asset_generation ---
+# --- 11_asset_generation ---
 asset_generation:
   impl: flux_trellis
   t2i_model: black-forest-labs/FLUX.1-schnell
@@ -150,7 +165,7 @@ asset_generation:
   seed: 0
   num_candidates: 1            # >1 → vygenerovať viac a vybrať podľa CLIP zhody s promptom
 
-# --- 11_editing ---
+# --- 12_editing ---
 editing:
   impl: router
   inpainter: lama
@@ -165,7 +180,7 @@ editing:
   insert_scale_heuristics: configs/category_sizes.yaml
   max_ops: 5
 
-# --- 12_rendering ---
+# --- 13_rendering ---
 rendering:
   impl: gsplat_offline
   cameras: test                # train | test | all | path:<súbor> | orbit
