@@ -58,7 +58,7 @@ reconstruction:
   seed: 0
   compile_ssim: true       # SSIM v loss cez torch.compile (rovnaká hodnota, rýchlejšie)
   resolution_schedule: [[0.25, 0.25], [0.5, 0.5]]  # coarse-to-fine: prvá 1/4 krokov na 1/4 rozlíšenia, druhá na 1/2; [] = vypnuté
-  aniso_reg: 0.1           # váha regularizácie ihiel (pomer najdlhšej a strednej osi); 0 = vypnuté
+  aniso_reg: 0.7           # váha regularizácie ihiel (pomer najdlhšej a strednej osi); 0 = vypnuté
   aniso_max_ratio: 10.0    # pomer osí, od ktorého sa penalizuje
   depth_reg: 0.2           # váha hĺbkového prioru (1 - korelácia s monokulárnou hĺbkou); 0 = vypnuté
   depth_model: depth-anything/Depth-Anything-V2-Small-hf  # iba Small je Apache 2.0 (Base/Large sú CC-BY-NC)

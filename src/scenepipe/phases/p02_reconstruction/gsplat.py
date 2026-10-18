@@ -60,7 +60,7 @@ class ReconstructionGsplat(Phase):
         "seed": 0,
         "compile_ssim": True,
         "resolution_schedule": [[0.25, 0.25], [0.5, 0.5]],
-        "aniso_reg": 0.1,
+        "aniso_reg": 0.7,
         "aniso_max_ratio": 10.0,
         "depth_reg": 0.2,
         "depth_model": "depth-anything/Depth-Anything-V2-Small-hf",

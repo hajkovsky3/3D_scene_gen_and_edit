@@ -100,7 +100,7 @@ reconstruction:
   seed: 0
   compile_ssim: true       # SSIM v loss cez torch.compile (rovnaká hodnota, ~4× rýchlejšie)
   resolution_schedule: [[0.25, 0.25], [0.5, 0.5]]  # coarse-to-fine; [] = vypnuté
-  aniso_reg: 0.1           # váha regularizácie ihiel; 0 = vypnuté
+  aniso_reg: 0.7           # váha regularizácie ihiel; 0 = vypnuté
   aniso_max_ratio: 10.0    # pomer najdlhšej a strednej osi, od ktorého sa penalizuje
   depth_reg: 0.2           # váha hĺbkového prioru; 0 = vypnuté (netreba transformers ani model)
   depth_model: depth-anything/Depth-Anything-V2-Small-hf   # iba Small je Apache 2.0
@@ -202,13 +202,20 @@ Porovnanie na Mip-NeRF 360 scénach (room, counter, kitchen) s publikovanými č
   | Variant | PSNR | SSIM | LPIPS | Ihly | Viditeľné ihly | Max. pomer osí |
   |---|---|---|---|---|---|---|
   | bez regularizácie | 30,68 | 0,929 | 0,153 | 2,56 % | 0,88 % | 195 |
-  | `aniso_reg: 0.1` (default) | 30,65 | 0,929 | 0,154 | 0,03 % | 0,02 % | 17 |
+  | `aniso_reg: 0.1` | 30,65 | 0,929 | 0,154 | 0,03 % | 0,02 % | 17 |
+  | `aniso_reg: 0.3` | 30,31 | 0,926 | 0,157 | 0,01 % | 0,01 % | 10,4 |
+  | `aniso_reg: 0.5` | 30,19 | 0,925 | 0,159 | 0,006 % | 0,003 % | 10,1 |
+  | `aniso_reg: 0.7` (default) | 30,21 | 0,926 | 0,158 | 0,006 % | 0,004 % | 10,1 |
+  | `aniso_reg: 0.9` | 30,32 | 0,926 | 0,157 | 0,003 % | 0,002 % | 10,0 |
 
   Kvalita na testovacích pohľadoch sa nezmenila (rozdiel v rámci šumu ~0,4 dB), ihiel je ~85×
-  menej. Časy tréningu (573 s / 703 s) nie sú porovnateľné, GPU zdieľali iné behy.
+  menej už pri 0.1. Riadky 0.3–0.9 bežali s `depth_reg: 0.2`, ostatné bez neho; nižšie PSNR
+  spôsobuje prior, nie `aniso_reg` (0.1 s `depth_reg: 0.2` má 30,27, pozri nižšie). Od 0.3 vyššie
+  sa pomer osí drží pri limite 10, metriky sa medzi 0.3 a 0.9 líšia iba šumom. Default 0.7 vybral
+  autor podľa vizuálneho porovnania. Časy tréningu nie sú porovnateľné, GPU zdieľali iné behy.
   Z pohľadov mimo trajektórie kamier je rozdiel okom malý: väčšinu artefaktov tam nerobia ihly,
   ale zle určená geometria (pozri hĺbkový prior).
-- [x] hĺbkový prior `depth_reg` (2026-10-18, *m360_room*, `fast`, s `aniso_reg: 0.1`):
+- [x] hĺbkový prior `depth_reg` (2026-10-18, *m360_room*, `fast`, s vtedajším `aniso_reg: 0.1`):
 
   | `depth_reg` | PSNR | SSIM | LPIPS | Tréning | Špička VRAM |
   |---|---|---|---|---|---|
