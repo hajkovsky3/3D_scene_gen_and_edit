@@ -118,7 +118,7 @@ tests/          kontraktové a jednotkové testy
 
 ## Inštalácia
 
-Zatiaľ nie je hotová. Fázy majú navzájom konfliktné závislosti, preto pobežia v oddelených
+Postup na čistý počítač krok po kroku: [`SETUP.md`](SETUP.md). Fázy majú navzájom konfliktné závislosti, preto pobežia v oddelených
 prostrediach podľa skupín ([`envs/README.md`](envs/README.md)). Spoločné jadro:
 
 ```bash
