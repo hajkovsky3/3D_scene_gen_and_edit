@@ -25,7 +25,8 @@ winget install Python.Python.3.14        # projekt: Python 3.11+, overené 3.14
 winget install Nvidia.GeForceExperience  # alebo ovládač z nvidia.com; potrebná CUDA 13.x (nvidia-smi)
 ```
 
-Po inštalácii ovládača overiť `nvidia-smi` (pravý horný roh: `CUDA Version` musí byť ≥ 13.0).
+Po inštalácii ovládača overiť `nvidia-smi` (pravý horný roh: `CUDA Version` musí byť ≥ 13.0;
+novšie ovládače, napr. 621.01, tam píšu `CUDA UMD Version`).
 
 ```powershell
 git clone https://github.com/hajkovsky3/3D_scene_gen_and_edit.git
@@ -35,7 +36,7 @@ cd 3D_scene_gen_and_edit
 ## 2. Prostredie `sp-core` vo Windowse (fázy 00, monitor, testy, lint)
 
 ```powershell
-py -3.14 -m venv .venv
+py -3.14 -m venv .venv       # bez spúšťača py (winget ho nemusí nainštalovať): python -m venv .venv
 .venv\Scripts\activate
 pip install -e ".[dev,ingest,sfm,monitor]"
 copy configs\local.example.yaml configs\local.yaml
@@ -56,6 +57,19 @@ wsl --install -d Ubuntu      # overené Ubuntu 26.04 LTS; po reštarte zadať me
 
 GPU ovládač zostáva windowsový, do WSL sa ovládač **neinštaluje**.
 
+Ak `wsl --status` hlási, že virtualizácia nie je zapnutá (hoci v BIOS je), najprv
+`wsl --install --no-distribution`, reštart, a až potom inštalácia Ubuntu.
+
+**Hypervisor len podľa potreby.** Virtual Machine Platform zapne Hyper-V hypervisor pri každom
+štarte Windowsu (spomaľuje VirtualBox/VMware, niektoré anti-cheaty s ním nefungujú). Samotné
+Ubuntu beží len počas používania (`wsl --shutdown` ho hneď vypne). Ak nechceš, aby hypervisor
+bežal stále, prepínať ho (PowerShell ako administrátor, po zmene reštart):
+
+```powershell
+bcdedit /set hypervisorlaunchtype off    # vypnúť, WSL potom nefunguje
+bcdedit /set hypervisorlaunchtype auto   # zapnúť pred prácou s GPU fázami
+```
+
 ### 3a. CUDA Toolkit a kompilátor (raz, ako root)
 
 ```powershell
@@ -65,11 +79,13 @@ wsl -d Ubuntu -u root
 ```bash
 wget https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-keyring_1.1-1_all.deb
 dpkg -i cuda-keyring_1.1-1_all.deb && apt-get update
-apt-get install -y build-essential python3-venv python3-dev ninja-build cuda-toolkit-13-0
+apt-get install -y build-essential python3-venv python3-dev ninja-build cuda-toolkit-13-3
 exit
 ```
 
-Major verzia CUDA Toolkitu (13.0) musí sedieť s PyTorch wheelom (`cu130`).
+Major verzia CUDA Toolkitu (13) musí sedieť s PyTorch wheelom (`cu130`); minor verzia môže byť
+vyššia. Na Ubuntu 26.04 (glibc 2.43) **nefunguje CUDA 13.0**: `nvcc` padá na chybe
+`exception specification is incompatible ... "rsqrt"`. Overené: CUDA 13.3 + gcc 15.2.
 
 ### 3b. Prostredie `sp-gs`
 
@@ -85,7 +101,7 @@ Ak `pip` nenájde wheel `pycolmap` 4.2.1 pre daný Python, stiahnuť ho ručne z
 zo súboru (`pip install ./pycolmap-4.2.1-...whl`).
 
 Overené verzie: Python 3.14.4, torch 2.14.1+cu130, torchvision 0.29.1+cu130, gsplat 1.5.3,
-torchmetrics 1.9.0, transformers 5.20.1, pycolmap 4.2.1.
+torchmetrics 1.9.0, transformers 5.20.2, pycolmap 4.2.1 (CUDA Toolkit 13.3, Ubuntu 26.04).
 
 ### 3c. Aktivačný skript `~/sp-gs.sh`
 
@@ -95,7 +111,7 @@ Monitor (`configs/local.yaml`, runner `wsl_gs`) ho volá pred každou GPU fázou
 ```bash
 # Activate the sp-gs environment (phases 01, 02, 03): source ~/sp-gs.sh
 source ~/venvs/sp-gs/bin/activate
-export CUDA_HOME=/usr/local/cuda-13.0
+export CUDA_HOME=/usr/local/cuda-13.3
 export PATH="$CUDA_HOME/bin:$PATH"
 export TORCH_CUDA_ARCH_LIST=7.5      # GTX 1650 = sm_75; iná GPU → iné číslo
 export MAX_JOBS=4
