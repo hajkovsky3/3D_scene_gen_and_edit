@@ -1,6 +1,6 @@
 # Fáza 03: Refinement (vyčistenie gaussiánov)
 
-`contract_version: 1`
+`contract_version: 2`
 
 ## Účel
 
@@ -33,7 +33,7 @@ s hotovými gaussiánmi.
 - `gaussians.ply` — formát podľa `docs/data-contracts.md`, sekcia 5, v tých istých svetových
   súradniciach ako vstup. Poradie ponechaných gaussiánov sa zachová.
 - `report.json` — `num_input`, `num_output`, `removed` (počet odstránených podľa kritéria:
-  `crop`, `opacity`, `views`, `scale`, `aniso`; jeden gaussián sa započíta pri prvom kritériu, ktoré ho
+  `crop`, `opacity`, `views`, `scale`, `isolated`, `aniso`; jeden gaussián sa započíta pri prvom kritériu, ktoré ho
   vyradí, v tomto poradí), `clamped` (počet skrátených ihiel), `crop_box` (`center`, `axes`,
   `lo`, `hi`, pozri Postup; `null` pri `crop: false`), `scene_radius`, `num_train_views`,
   `before` a `after` (`psnr`, `ssim`, `lpips` priemer cez testovacie pohľady alebo `null`),
@@ -63,7 +63,12 @@ Fázy 07 a 08 čítajú gaussiány odtiaľto, nie z `02_reconstruction/`.
 4. **Kritériá odstránenia** (každé sa dá vypnúť hodnotou 0):
    - `sigmoid(opacity) < min_opacity`,
    - viditeľnosť `< min_views`,
-   - najdlhšia os `> max_scale_frac × polomer scény`.
+   - najdlhšia os `> max_scale_frac × polomer scény`,
+   - **izolované gaussiány** (`isolated_min_count > 0`): priestor sa rozdelí na voxely s hranou
+     `isolated_voxel × polomer scény` a pre každý gaussián sa spočíta, koľko gaussiánov leží v jeho
+     voxeli a 26 susedných. Ak je ich menej než `isolated_min_count` (vrátane neho), odstráni sa.
+     Počíta sa iba medzi gaussiánmi, ktoré prežili predchádzajúce kritériá, takže zhluk zložený
+     z priehľadného oparu alebo ležiaci mimo kvádra nepodrží osamotený gaussián pri živote.
 5. **Ihly**: ak `max_aniso > 0` a pomer najdlhšej a strednej osi prekročí limit, najdlhšia os sa
    skráti na `max_aniso × stredná os` (`aniso_action: clamp`), alebo sa gaussián odstráni (`remove`).
 6. **Metriky**: render testovacích pohľadov pred a po (gsplat, rovnaké rozlíšenie ako v reporte 02).
@@ -74,7 +79,7 @@ Implementácia `none` skopíruje `gaussians.ply` bez zmeny a zapíše report s `
 
 | Názov | Popis | Licencia |
 |---|---|---|
-| `prune` (primárna) | orezanie podľa opacity, viditeľnosti z kamier, mierky a anizotropie; vlastný kód (NumPy, metriky cez gsplat) | Apache 2.0 (gsplat) |
+| `prune` (primárna) | orezanie podľa ohraničenia, opacity, viditeľnosti z kamier, mierky, izolovanosti a anizotropie; vlastný kód (NumPy, metriky cez gsplat) | Apache 2.0 (gsplat) |
 | `none` | bez zmeny, na porovnanie „pred a po“ | — |
 
 Možné rozšírenia (zatiaľ nenavrhnuté):
@@ -87,12 +92,14 @@ Možné rozšírenia (zatiaľ nenavrhnuté):
 ```yaml
 refinement:
   impl: prune              # prune | none
-  crop: false              # ohraničenie kvádrom okolo bodov SfM
+  crop: true               # ohraničenie kvádrom okolo bodov SfM
   crop_quantile: 0.01
   crop_margin: 0.1
   min_opacity: 0.02        # 0 = vypnuté
   min_views: 3             # 0 = vypnuté
   max_scale_frac: 0        # napr. 0.5; 0 = vypnuté
+  isolated_voxel: 0.02     # hrana voxelu ako podiel polomeru scény
+  isolated_min_count: 4    # najmenší počet gaussiánov v okolí 3×3×3 voxelov; 0 = vypnuté
   max_aniso: 0             # napr. 10; 0 = vypnuté
   aniso_action: clamp      # clamp | remove
   eval: true               # metriky pred a po
@@ -101,7 +108,9 @@ refinement:
 ```
 
 Predvolené hodnoty vychádzajú z meraní na *m360_room* (pozri Stav): orezanie mierky a ihiel
-je vypnuté, lebo bez dotréningu robí diery.
+je vypnuté, lebo bez dotréningu robí diery. Ohraničenie a izolované gaussiány sú zapnuté
+(rozhodnutie z 2026-10-26 po vizuálnom porovnaní v SuperSplate): pre sémantickú vrstvu a úpravy
+je dôležitejšia čistá geometria než odlesky a výhľad z okna, pozri Riziká.
 
 ## Hardvér
 
@@ -126,8 +135,12 @@ S `eval: false` fáza GPU nepotrebuje.
   „zrkadlový svet“ za nimi (na *m360_room* gaussiány pod lesklou podlahou) a výhľad z okna ako
   geometriu za oknom. Zvonka izby to vyzerá ako škvrny pod izbou a bodky vedľa nej, zvnútra ako
   správny odlesk a výhľad. Kváder podľa bodov SfM ich odstráni: čierne okno, tmavá diera
-  v podlahe, PSNR 30,68 → 26,02 (najhorší pohľad −14,9 dB). Preto je `crop` predvolene vypnutý;
-  hodí sa tam, kde je dôležitejšia čistá geometria než vzhľad.
+  v podlahe, PSNR 30,68 → 26,02 (najhorší pohľad −14,9 dB). Napriek tomu je `crop` predvolene zapnutý,
+  lebo zvonka sú tieto gaussiány rušivé škvrny a pre úpravy scény je dôležitejšia čistá geometria.
+  Kde záleží na vzhľade (čísla do porovnania s literatúrou), treba `crop: false`.
+- Prah izolovanosti závisí od hustoty gaussiánov: pri veľmi malom `cap_max` v 02 (riedke
+  gaussiány) by `isolated_min_count` začal odstraňovať aj skutočné povrchy. Voxel je relatívny
+  k polomeru scény, nie k veľkosti gaussiánov.
 - Kritérium viditeľnosti pôvodne počítalo iba stred gaussiánu a na *m360_room* odstránilo
   89 veľkých gaussiánov pozadia (jeden testovací pohľad −3,2 dB). Preto sa ráta s okrajom 3σ.
 - `max_scale_frac` sa vzťahuje na polomer kamier, nie na veľkosť miestnosti. Keď kamery krúžia
@@ -165,6 +178,21 @@ a confidence s fázou 03 a bez nej (`impl: none`).
   | default + `crop` (kvantil 0,01) | 405 659 | 26,02 | — | −14,9 dB |
 
   Viditeľnosť s okrajom 3σ na tejto dobre nasnímanej scéne neodstráni nič; LPIPS 0,1525 → 0,1527.
+- [x] kritérium izolovaných gaussiánov a zapnuté ohraničenie (2026-10-26, `contract_version` 2):
+  na *m360_room* (`fast`) ladiaca kópia bez gaussiánov mimo kvádra a bez izolovaných (spolu
+  ~4 500 z 409 000) vyzerala v SuperSplate najčistejšie z porovnávaných variantov. Merania
+  fázy na tom istom výstupe 02 (39 testovacích pohľadov zvnútra izby):
+
+  | Nastavenie | Odstránené | PSNR | Najhorší pohľad |
+  |---|---|---|---|
+  | len opacity (pôvodný default) | 90 508 | 30,22 | — |
+  | + izolované, bez `crop` | 92 188 | 27,56 | −16,4 dB |
+  | **+ `crop` + izolované (default)** | 95 232 | **25,16** | −20,2 dB |
+
+  Zvnútra je okno čierne a chýbajú odlesky v podlahe (prijatý kompromis, pozri Riziká).
+  Izolovanosť sa počíta zo stredov: 934 z 1 680 izolovaných gaussiánov je veľkých (3σ > 5 voxelov,
+  opacity ~0,4), sú to riedke oblasti ako výhľad z okna; drobných smietok (≤ 1 voxel) je ~70.
+  Variant, ktorý by veľké gaussiány nepovažoval za izolované, zatiaľ nie je.
 - [ ] overenie na scéne z telefónu (*izba*), kde floaterov mimo kamier je viac
 - [ ] dotréning po orezaní (umožnil by zapnúť skracovanie ihiel bez dier)
 

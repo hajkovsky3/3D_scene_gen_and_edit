@@ -67,12 +67,14 @@ reconstruction:
 # --- 03_refinement ---
 refinement:
   impl: prune              # prune | none (iba skopíruje gaussiány z 02)
-  crop: false              # odstrániť gaussiány mimo kvádra okolo bodov SfM; vyreže aj výhľad z okna a odrazy v podlahe
+  crop: true               # odstrániť gaussiány mimo kvádra okolo bodov SfM; vyreže aj výhľad z okna a odrazy v podlahe
   crop_quantile: 0.01      # rozsah kvádra: kvantil..1-kvantil bodov SfM pozdĺž každej osi
   crop_margin: 0.1         # rezerva na každej strane, podiel rozsahu kvádra
   min_opacity: 0.02        # odstrániť takmer priehľadné gaussiány (sigmoid(opacity) < hodnota); 0 = vypnuté
   min_views: 3             # odstrániť gaussiány, ktoré nezasahujú do záberu aspoň toľkých tréningových kamier; 0 = vypnuté
   max_scale_frac: 0        # odstrániť gaussiány s najdlhšou osou > podiel polomeru kamier (napr. 0.5); 0 = vypnuté, zasahuje aj steny
+  isolated_voxel: 0.02     # hrana voxelu na hľadanie izolovaných gaussiánov, podiel polomeru kamier
+  isolated_min_count: 4    # odstrániť gaussiány, ktoré majú v okolí 3×3×3 voxelov (vrátane seba) menej gaussiánov; 0 = vypnuté
   max_aniso: 0             # pomer najdlhšej a strednej osi (napr. 10); 0 = vypnuté, bez dotréningu robí medzery
   aniso_action: clamp      # clamp = skrátiť najdlhšiu os na limit | remove = odstrániť
   eval: true               # PSNR/SSIM/LPIPS pred a po na testovacích pohľadoch z 02

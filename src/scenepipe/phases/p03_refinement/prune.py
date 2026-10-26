@@ -1,6 +1,6 @@
 """Phase 03_refinement, implementation `prune`: crops the scene to the box of the SfM points,
-removes nearly transparent, unobserved and oversized gaussians and shortens (or removes)
-needle-like ones. Spec: phases/03_refinement.md
+removes nearly transparent, unobserved, oversized and isolated gaussians and shortens (or
+removes) needle-like ones. Spec: phases/03_refinement.md
 
 NumPy only; no GPU needed unless `eval: true`.
 """
@@ -16,11 +16,13 @@ from scenepipe.core.gaussians import Gaussians
 from scenepipe.core.phase import register
 from scenepipe.phases.p03_refinement.common import CRITERIA, REFINE_END, RefinementBase
 
+MAX_VOXEL_OFFSET = 2**19  # voxels from the median; 3 axes x 20 bits fit in an int64 code
+
 
 @register
 class RefinementPrune(RefinementBase):
     impl = "prune"
-    impl_version = "1"
+    impl_version = "2"
 
     def refine(
         self, g: Gaussians, train: list[Camera], radius: float
@@ -58,6 +60,12 @@ class RefinementPrune(RefinementBase):
             "scale": scales.max(1) > max_scale_frac * radius if max_scale_frac > 0 else none,
             "aniso": needle if cfg["aniso_action"] == "remove" else none,
         }
+        masks["isolated"] = none.copy()
+        if min_count := int(cfg["isolated_min_count"]):
+            # among the survivors only: a cluster of haze or of cropped gaussians keeps nothing alive
+            alive = ~(masks["crop"] | masks["opacity"] | masks["views"] | masks["scale"])
+            voxel = float(cfg["isolated_voxel"]) * radius
+            masks["isolated"][alive] = isolated_mask(g.means[alive], voxel, min_count)
         removed, gone = {}, np.zeros(n, bool)
         for key in CRITERIA:  # a gaussian counts for the first criterion that removes it
             removed[key] = int((masks[key] & ~gone).sum())
@@ -104,6 +112,31 @@ def crop_box(points: np.ndarray, quantile: float, margin: float) -> dict[str, np
 def inside_box(x: np.ndarray, box: dict[str, np.ndarray]) -> np.ndarray:
     local = (np.asarray(x, np.float64) - box["center"]) @ np.asarray(box["axes"]).T
     return ((local >= box["lo"]) & (local <= box["hi"])).all(axis=1)
+
+
+def isolated_mask(means: np.ndarray, voxel: float, min_count: int) -> np.ndarray:
+    """Gaussians with fewer than `min_count` gaussians (themselves included) in their voxel and
+    the 26 neighbouring ones (voxel edge `voxel`, world units)."""
+    key = np.floor(np.asarray(means, np.float64) / voxel)
+    far = (np.abs(key - np.median(key, axis=0)) > MAX_VOXEL_OFFSET).any(axis=1)
+    out = far.copy()  # absurdly far away: isolated, and kept out of the int64 voxel codes
+    if far.all():
+        return out
+    k = key[~far].astype(np.int64)
+    k -= k.min(axis=0) - 1  # >= 1, so the -1 neighbour stays non-negative
+    dims = k.max(axis=0) + 2
+    code = (k[:, 0] * dims[1] + k[:, 1]) * dims[2] + k[:, 2]
+    cells, inverse, counts = np.unique(code, return_inverse=True, return_counts=True)
+    total = np.zeros(len(cells), np.int64)
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                nb = cells + (dx * dims[1] + dy) * dims[2] + dz
+                idx = np.minimum(np.searchsorted(cells, nb), len(cells) - 1)
+                hit = cells[idx] == nb
+                total[hit] += counts[idx[hit]]
+    out[~far] = total[inverse.ravel()] < min_count
+    return out
 
 
 def view_counts(

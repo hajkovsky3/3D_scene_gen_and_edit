@@ -20,6 +20,7 @@ from scenepipe.phases.p03_refinement.prune import (
     clamp_needles,
     crop_box,
     inside_box,
+    isolated_mask,
     needle_mask,
 )
 
@@ -28,7 +29,7 @@ N_VIEWS = 24
 TEST_IDS = ["f000001", "f000009", "f000017"]
 N_SURFACE = 3000
 N_TRANSPARENT, N_FLOATERS, N_HUGE, N_NEEDLES = 40, 30, 20, 25
-CPU = {"eval": False}
+CPU = {"eval": False, "isolated_min_count": 0}  # the synthetic surface is too sparse for it
 
 
 def _logit(p: float) -> float:
@@ -128,6 +129,26 @@ def test_prune_clamps_needles(scene):
     assert report["clamped"] == N_NEEDLES and report["removed"]["aniso"] == 0
     assert report["removed"]["views"] == 0
     assert not needle_mask(np.exp(g.scales), 10 * 1.0001).any()
+
+
+def test_isolated_counted_after_other_criteria(scene):
+    report, _ = run(scene, RefinementPrune, {"eval": False, "min_views": 0})
+    # floaters and transparent gaussians are isolated too, but count for the earlier criterion
+    assert report["removed"]["crop"] == N_FLOATERS
+    assert report["removed"]["opacity"] == N_TRANSPARENT
+    assert report["removed"]["isolated"] > 0
+
+
+def test_isolated_mask():
+    rng = np.random.default_rng(0)
+    cluster = rng.uniform(0, 0.05, (200, 3))
+    lone = np.array([[1.0, 0, 0], [0, 1.0, 0], [0, 0, 1.0]])
+    pair = np.array([[2.0, 2, 2], [2.005, 2, 2]])
+    far = np.array([[1e12, 0, 0]])  # must not overflow the voxel codes
+    x = np.vstack([cluster, lone, pair, far])
+    iso = isolated_mask(x, 0.02, 4)
+    assert not iso[:200].any() and iso[200:].all()
+    assert isolated_mask(pair, 0.02, 2).sum() == 0  # two neighbours are enough for min_count 2
 
 
 def test_none_copies_input(scene):

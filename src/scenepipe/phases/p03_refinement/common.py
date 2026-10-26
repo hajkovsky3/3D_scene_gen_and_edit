@@ -24,7 +24,8 @@ from scenepipe.core.phase import ContractError, Phase
 
 log = logging.getLogger(__name__)
 
-CRITERIA = ("crop", "opacity", "views", "scale", "aniso")  # order in which removals are counted
+# order in which removals are counted
+CRITERIA = ("crop", "opacity", "views", "scale", "isolated", "aniso")
 JPEG_QUALITY = 95
 PSNR_CONSISTENCY_DB = 0.05
 PSNR_DROP_WARN_DB = 1.0
@@ -33,14 +34,16 @@ REFINE_END = 0.5  # share of the phase progress taken by refine() when evaluatin
 
 class RefinementBase(Phase):
     phase = "03_refinement"
-    contract_version = 1
+    contract_version = 2
     defaults: ClassVar[dict[str, Any]] = {
-        "crop": False,
+        "crop": True,
         "crop_quantile": 0.01,
         "crop_margin": 0.1,
         "min_opacity": 0.02,
         "min_views": 3,
         "max_scale_frac": 0,
+        "isolated_voxel": 0.02,
+        "isolated_min_count": 4,
         "max_aniso": 0,
         "aniso_action": "clamp",
         "eval": True,
