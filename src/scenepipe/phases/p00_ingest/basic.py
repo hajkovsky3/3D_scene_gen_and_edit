@@ -89,6 +89,9 @@ class IngestBasic(Phase):
             return {"input": self.input_dir / "*"}
         return {self.ws.rel(p): p for p in files}
 
+    def steps(self) -> list[str]:
+        return ["načítanie vstupov", "filtrovanie snímok", "zápis snímok"]
+
     def run(self) -> dict[str, Path]:
         images_dir = self.out_dir / "images"
         staging = self.out_dir / "_staging"

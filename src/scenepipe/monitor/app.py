@@ -48,6 +48,14 @@ NODE_FILL = {
     "failed": ("fail_soft", "fail"),
 }
 
+# Checklist of a phase's steps: (mark, color) of the current step by phase status.
+CURRENT_STEP = {
+    "running": ("▸", "accent"),
+    "stalled": ("▸", "warn"),
+    "failed": ("✗", "fail"),
+    "stopped": ("■", "pending_ink"),
+}
+
 # Graph layout in logical units (mirrors the DAG in phases/README.md); x, y = node centre.
 VIEW_W, VIEW_H = 1200, 560
 NW, NH = 160, 60
@@ -145,8 +153,13 @@ class PhaseRow(ctk.CTkFrame):
         self.badge.grid(row=0, column=3, sticky="e")
         self.bar = ctk.CTkProgressBar(self, height=6, corner_radius=3, fg_color=C["pending"])
         self.bar.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 6))
+        self.steps_box = ctk.CTkFrame(self, fg_color="transparent")
+        self.steps_box.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 6))
+        self.step_labels: list[ctk.CTkLabel] = []
+        self.step_names: list[str] = []
+        self.step_fonts = (ctk.CTkFont(size=12), ctk.CTkFont(size=12, weight="bold"))
         detail = ctk.CTkFrame(self, fg_color="transparent")
-        detail.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 6))
+        detail.grid(row=3, column=0, sticky="ew", padx=12, pady=(0, 6))
         detail.columnconfigure(0, weight=1)
         small = ctk.CTkFont(size=12)
         self.stage = ctk.CTkLabel(
@@ -156,8 +169,6 @@ class PhaseRow(ctk.CTkFrame):
         self.stage.grid(row=0, column=0, sticky="w")
         self.times = ctk.CTkLabel(detail, text="", font=small, text_color=C["muted"])
         self.times.grid(row=0, column=1, sticky="ne", padx=(8, 0))
-        self.chips = ctk.CTkLabel(self, text="", font=small, text_color=C["muted"], anchor="w")
-        self.chips.grid(row=3, column=0, sticky="w", padx=12, pady=(0, 6))
         self.error = ctk.CTkLabel(
             self, text="", font=small, text_color=C["fail"], justify="left", anchor="w",
             wraplength=340,
@@ -169,7 +180,10 @@ class PhaseRow(ctk.CTkFrame):
         active = status in ("running", "stalled")
         self.name.configure(text=p["name"])
         self.impl.configure(text=p["impl"] or "")
-        badge = STATUS_TEXT[status] + (f" · {round(p['fraction'] * 100)} %" if active else "")
+        if status == "done" and p["elapsed_s"] is not None:
+            badge = fmt_dur(p["elapsed_s"])  # how long it took, instead of "hotovo"
+        else:
+            badge = STATUS_TEXT[status] + (f" · {round(p['fraction'] * 100)} %" if active else "")
         self.badge.configure(text=badge, text_color=C[STATUS_COLOR[status]])
         border = {"running": "accent", "stalled": "warn", "failed": "fail"}.get(status, "line")
         self.configure(border_color=C[border], border_width=2 if active else 1)
@@ -183,28 +197,58 @@ class PhaseRow(ctk.CTkFrame):
             self.bar.set(p["fraction"])
             self.bar.grid()
 
-        stage = (
-            ""
-            if status in ("pending", "done")
-            else " — ".join(x for x in (p["stage"], p["message"]) if x)
-        )
+        show_steps = status in CURRENT_STEP and bool(p["steps"])
+        self._update_steps(p if show_steps else None)
+        if status in ("pending", "done"):
+            stage = ""
+        elif show_steps and p["step"] is not None:
+            stage = ""  # the step and its message are in the checklist
+        else:
+            stage = " — ".join(x for x in (p["stage"], p["message"]) if x)
         if status == "running":
             eta = f"\nzostáva ~{fmt_dur(p['eta_s'])}" if p["eta_s"] is not None else ""
             times = fmt_dur(p["elapsed_s"]) + eta
         elif status == "stalled":
             times = f"bez zmeny {fmt_dur(p['idle_s'])}"
+        elif status in ("failed", "stopped") and p["elapsed_s"] is not None:
+            times = fmt_dur(p["elapsed_s"])
         else:
-            times = fmt_dur(p["elapsed_s"]) if p["elapsed_s"] is not None else ""
+            times = ""  # done: the duration is in the badge
         self.stage.configure(text=stage)
         self.times.configure(text=times)
         self.stage.master.grid() if (stage or times) else self.stage.master.grid_remove()
-        chips = "   ".join(f"{k} {v}" for k, v in p["summary"])
-        self.chips.configure(text=chips)
-        self.chips.grid() if chips else self.chips.grid_remove()
         self.error.configure(
             text=p["error"] or "", text_color=C["fail" if status == "failed" else "muted"]
         )
         self.error.grid() if p["error"] else self.error.grid_remove()
+
+    def _update_steps(self, p: dict[str, Any] | None) -> None:
+        """Checklist of the phase's steps: done ✓, current (by status), pending ○."""
+        if p is None:
+            self.steps_box.grid_remove()
+            return
+        if p["steps"] != self.step_names:
+            for label in self.step_labels:
+                label.destroy()
+            self.step_names = list(p["steps"])
+            self.step_labels = [
+                ctk.CTkLabel(self.steps_box, text="", font=self.step_fonts[0], anchor="w",
+                             justify="left", height=18, wraplength=340)
+                for _ in self.step_names
+            ]  # fmt: skip
+            for i, label in enumerate(self.step_labels):
+                label.grid(row=i, column=0, sticky="w")
+        current, message = p["step"], p["message"]
+        for i, (name, label) in enumerate(zip(self.step_names, self.step_labels, strict=True)):
+            if current is not None and i < current:
+                mark, color, bold = "✓", "done", False
+            elif i == current:
+                (mark, color), bold = CURRENT_STEP[p["status"]], True
+            else:
+                mark, color, bold = "○", "pending_ink", False
+            text = f"{mark}  {name}" + (f"  ·  {message}" if i == current and message else "")
+            label.configure(text=text, text_color=C[color], font=self.step_fonts[bold])
+        self.steps_box.grid()
 
 
 class MonitorApp(ctk.CTk):

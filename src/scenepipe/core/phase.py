@@ -65,6 +65,11 @@ class Phase(ABC):
     def validate_outputs(self, outputs: dict[str, Path]) -> None:
         """Check outputs against the contract in phases/XX_*.md; raise ContractError."""
 
+    def steps(self) -> list[str]:
+        """Stage names this run reports via self.progress, in order (may depend on the config).
+        Shown by the monitor as a checklist; "validácia" is appended by execute()."""
+        return []
+
     def execute(self) -> dict[str, Path]:
         """Run the phase end to end: check inputs, run, validate, write manifest.
 
@@ -79,7 +84,8 @@ class Phase(ABC):
         stale = self.out_dir / "manifest.json"  # an old manifest must not look like a result
         stale.unlink(missing_ok=True)
         started = _now()
-        self.progress.start()
+        steps = self.steps()
+        self.progress.start([*steps, "validácia"] if steps else [])
         try:
             outs = self.run()
             self.progress.update(stage="validácia", message="", force=True)

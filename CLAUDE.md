@@ -35,6 +35,7 @@ Každá fáza je samostatný modul s jasným kontraktom **vstupné súbory → v
    názov fázy, implementácia, verzia, konfigurácia, vstupy s hashmi, výstupy, čas behu, git commit.
    Počas behu hlási priebeh cez `self.progress` (súbor `progress.json`, pozri
    `docs/data-contracts.md`); dlhé kroky majú hlásiť percentá, aby ich ukázal monitor.
+   Zoznam krokov vráti metóda `steps()` a `stage` počas behu nadobúda práve tieto názvy.
 5. **Každá fáza validuje svoj výstup** metódou `validate_outputs()` ešte pred zápisom manifestu.
 6. Fázy môžu bežať v **rôznych Python prostrediach** (konfliktné závislosti: SAM, gsplat, TRELLIS,
    VLM). Preto žiadne zdieľanie objektov v pamäti medzi fázami, iba súbory.

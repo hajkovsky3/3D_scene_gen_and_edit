@@ -70,6 +70,17 @@ class RefinementBase(Phase):
 
     # --- run -------------------------------------------------------------------------------
 
+    def steps(self) -> list[str]:
+        return [
+            "načítanie",
+            *self.refine_steps(),
+            *(["vyhodnotenie"] if self.config["eval"] else []),
+        ]
+
+    def refine_steps(self) -> list[str]:
+        """Progress stages reported by refine(), in order."""
+        return []
+
     def run(self) -> dict[str, Path]:
         cfg = self.config
         src = self.ws.abs("02_reconstruction/gaussians.ply")

@@ -32,6 +32,7 @@ class Progress:
             "impl": impl,
             "status": "running",
             "stage": "",
+            "steps": [],
             "fraction": 0.0,
             "message": "",
             "started_at": _now(),
@@ -40,7 +41,9 @@ class Progress:
         }
         self._last_write = 0.0
 
-    def start(self) -> None:
+    def start(self, steps: list[str] | None = None) -> None:
+        """First write; `steps` are the stage names of this run in order (for the monitor)."""
+        self.data["steps"] = list(steps or [])
         self._write()
 
     def update(

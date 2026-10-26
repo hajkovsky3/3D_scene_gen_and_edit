@@ -65,6 +65,7 @@ kontraktu** a žiadna fáza ho nečíta.
   "impl": "gsplat",
   "status": "running",
   "stage": "tréning",
+  "steps": ["načítanie snímok", "odhad hĺbky", "tréning", "export PLY", "vyhodnotenie", "validácia"],
   "fraction": 0.4123,
   "message": "krok 12 351/30 000, N=1000000, loss 0.0431",
   "started_at": "2026-10-16T18:57:02+00:00",
@@ -77,6 +78,10 @@ kontraktu** a žiadna fáza ho nečíta.
   výnimky, pri `stopped` dôvod (Ctrl+C, SIGTERM, alebo „zastavené používateľom“, ak proces
   ukončil monitor a súbor po ňom označil sám).
 - `fraction`: podiel celej fázy 0–1, monotónne rastie. `stage` je krátky názov kroku po slovensky.
+- `steps`: všetky kroky tohto behu v poradí (fáza ich zostaví na začiatku podľa konfigurácie,
+  napr. bez „odhad hĺbky“ pri `depth_reg: 0`; posledný je vždy „validácia“). Hodnoty `stage`
+  počas behu sú prvky tohto zoznamu, takže monitor vie ukázať hotové, aktuálny a čakajúce kroky.
+  Prázdny zoznam = fáza kroky neuvádza.
 - Zápis je atomický (dočasný súbor + premenovanie), najviac približne raz za sekundu.
 - Fáza s dlhým krokom bez priebežného stavu (napr. mapping v COLMAP) aspoň nastaví `stage`.
   Monitor ukáže fázu ako „bez aktualizácie“, ak sa `updated_at` nezmenil 10 min.

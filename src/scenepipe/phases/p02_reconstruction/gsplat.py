@@ -76,6 +76,12 @@ class ReconstructionGsplat(Phase):
 
     # --- run -------------------------------------------------------------------------------
 
+    def steps(self) -> list[str]:
+        cfg = self.config
+        depth = ["odhad hĺbky"] if float(cfg["depth_reg"]) > 0 else []
+        evaluation = ["vyhodnotenie"] if int(cfg["test_every"]) > 0 else []
+        return ["načítanie snímok", *depth, "tréning", "export PLY", *evaluation]
+
     def run(self) -> dict[str, Path]:
         cfg = self.config
         if not torch.cuda.is_available():

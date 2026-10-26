@@ -24,6 +24,9 @@ class RefinementPrune(RefinementBase):
     impl = "prune"
     impl_version = "2"
 
+    def refine_steps(self) -> list[str]:
+        return [*(["viditeľnosť"] if int(self.config["min_views"]) > 0 else []), "orezanie"]
+
     def refine(
         self, g: Gaussians, train: list[Camera], radius: float
     ) -> tuple[Gaussians | None, dict[str, int], int, dict[str, Any]]:

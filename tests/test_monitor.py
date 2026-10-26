@@ -24,10 +24,14 @@ class DummyPhase(Phase):
     def inputs(self) -> dict[str, Path]:
         return {}
 
+    def steps(self) -> list[str]:
+        return ["práca"]
+
     def run(self) -> dict[str, Path]:
         stage = self.progress.stage(0.2, 0.8, "práca")
         stage.update(0.5, "polovica")
         assert read_progress(self.out_dir)["stage"] == "práca"
+        assert read_progress(self.out_dir)["steps"] == ["práca", "validácia"]
         if self.config["fail"]:
             raise RuntimeError("boom")
         out = self.out_dir / "tags.json"
@@ -82,9 +86,17 @@ def test_execute_reports_done_and_failure(tmp_path):
     assert not (d / "manifest.json").exists()  # stale manifest removed at start
     st = phase_status("04_tagging", d, NOW)
     assert st["status"] == "failed" and "boom" in st["error"]
+    assert st["steps"] == ["práca", "validácia"] and st["step"] == 0  # failed in "práca"
 
 
-def write_progress(d: Path, status: str, fraction: float, started: datetime, updated: datetime):
+def write_progress(
+    d: Path,
+    status: str,
+    fraction: float,
+    started: datetime,
+    updated: datetime,
+    steps: list[str] | None = None,
+):
     d.mkdir(parents=True, exist_ok=True)
     data = {
         "phase": d.name,
@@ -97,6 +109,8 @@ def write_progress(d: Path, status: str, fraction: float, started: datetime, upd
         "updated_at": updated.isoformat(),
         "error": None,
     }
+    if steps is not None:  # progress.json written before steps existed has no such key
+        data["steps"] = steps
     (d / "progress.json").write_text(json.dumps(data), encoding="utf-8")
 
 
@@ -111,6 +125,17 @@ def test_running_eta_and_stalled(tmp_path):
     write_progress(d, "running", 0.25, NOW - timedelta(hours=1), stale)
     st = phase_status("02_reconstruction", d, NOW)
     assert st["status"] == "stalled" and st["eta_s"] is None
+    assert st["steps"] == [] and st["step"] is None
+
+
+def test_steps_current_index(tmp_path):
+    d = tmp_path / "02_reconstruction"
+    steps = ["načítanie snímok", "tréning", "export PLY", "validácia"]
+    write_progress(d, "running", 0.4, NOW, NOW, steps)
+    st = phase_status("02_reconstruction", d, NOW)
+    assert st["steps"] == steps and st["step"] == 1
+    write_progress(d, "running", 0.4, NOW, NOW, ["iné"])  # stage not among the steps
+    assert phase_status("02_reconstruction", d, NOW)["step"] is None
 
 
 def test_scene_status_old_runs_and_edits(tmp_path):
@@ -129,7 +154,6 @@ def test_scene_status_old_runs_and_edits(tmp_path):
     by_id = {p["id"]: p for p in st["phases"]}
     assert st["edit_id"] == "e001" and len(st["phases"]) == 14
     assert by_id["00_ingest"]["status"] == "done" and by_id["00_ingest"]["elapsed_s"] == 72
-    assert by_id["00_ingest"]["summary"] == [["snímky", "3"], ["vyradené", "1"]]
     assert by_id["01_sfm"]["status"] == "pending"
     assert by_id["12_editing"]["status"] == "running"
 
@@ -141,7 +165,13 @@ def test_window_smoke(tmp_path):
 
     from scenepipe.monitor.app import MonitorApp
 
-    write_progress(tmp_path / "room" / "02_reconstruction", "running", 0.4, NOW, NOW)
+    steps = ["načítanie snímok", "tréning", "export PLY", "validácia"]
+    write_progress(tmp_path / "room" / "02_reconstruction", "running", 0.4, NOW, NOW, steps)
+    d00 = tmp_path / "room" / "00_ingest"
+    d00.mkdir()
+    manifest = {"impl": "basic", "started_at": "2026-10-16T10:00:00+00:00",
+                "finished_at": "2026-10-16T10:01:12+00:00"}  # fmt: skip
+    (d00 / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     try:
         ctk.set_appearance_mode("light")
         app = MonitorApp(tmp_path, "room")
@@ -151,7 +181,12 @@ def test_window_smoke(tmp_path):
         app._poll(reschedule=False)
         app.update()
         assert app.scene == "room"
-        assert app.rows["02_reconstruction"].badge.cget("text").startswith("bez aktualizácie")
+        row = app.rows["02_reconstruction"]
+        assert row.badge.cget("text").startswith("bez aktualizácie")
+        marks = [label.cget("text")[0] for label in row.step_labels]
+        assert marks == ["✓", "▸", "○", "○"]
+        done = app.rows["00_ingest"]
+        assert done.badge.cget("text") == "1 min 12 s" and done.times.cget("text") == ""
         app._focus("02_reconstruction")
     finally:
         app.destroy()

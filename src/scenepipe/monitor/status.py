@@ -1,4 +1,4 @@
-"""Scene status for the monitor: reads progress.json / manifest.json / report.json from disk.
+"""Scene status for the monitor: reads progress.json / manifest.json from disk.
 
 Read-only. Works for phases running anywhere (another Python env, WSL) as long as they write
 into the same workspace directory.
@@ -84,11 +84,12 @@ def phase_status(phase: str, d: Path | None, now: datetime) -> dict[str, Any]:
         "fraction": 0.0,
         "stage": "",
         "message": "",
+        "steps": [],
+        "step": None,  # index of `stage` in `steps`, None if not listed
         "elapsed_s": None,
         "eta_s": None,
         "idle_s": None,
         "error": None,
-        "summary": [],
     }
     if d is None or not d.is_dir():
         return out
@@ -101,7 +102,10 @@ def phase_status(phase: str, d: Path | None, now: datetime) -> dict[str, Any]:
             stage=prog.get("stage") or "",
             message=prog.get("message") or "",
             error=prog.get("error"),
+            steps=list(prog.get("steps") or []),
         )
+        if out["stage"] in out["steps"]:
+            out["step"] = out["steps"].index(out["stage"])
     if prog and prog.get("status") == "running":
         started, updated = _ts(prog.get("started_at")), _ts(prog.get("updated_at"))
         idle = (now - updated).total_seconds() if updated else None
@@ -120,36 +124,7 @@ def phase_status(phase: str, d: Path | None, now: datetime) -> dict[str, Any]:
         out.update(status="done", fraction=1.0, stage="hotovo", message="")
         out["impl"] = out["impl"] or manifest.get("impl")
         out["elapsed_s"] = _span(manifest.get("started_at"), manifest.get("finished_at"))
-    if out["status"] == "done":  # a running phase may still have the previous run's report
-        out["summary"] = summarize(phase, d)
     return out
-
-
-def summarize(phase: str, d: Path) -> list[list[str]]:
-    """A few key numbers per phase for the side panel (label, value)."""
-    if phase == "00_ingest":
-        data = _read_json(d / "frames.json")
-        if data:
-            return [
-                ["snímky", str(len(data.get("frames", [])))],
-                ["vyradené", str(len(data.get("rejected", [])))],
-            ]
-        return []
-    r = _read_json(d / "report.json")
-    if not r:
-        return []
-    if phase == "01_sfm":
-        return [
-            ["kamery", f"{r.get('num_registered')}/{r.get('num_frames')}"],
-            ["párovanie", str(r.get("matcher"))],
-            ["chyba", f"{r.get('mean_reprojection_error_px', 0):.2f} px"],
-        ]
-    if phase == "02_reconstruction":
-        items = [["PSNR", f"{r['psnr']:.2f} dB"]] if r.get("psnr") is not None else []
-        items.append(["gaussiány", f"{r.get('num_gaussians', 0):,}".replace(",", " ")])
-        items.append(["kroky", f"{r.get('iterations', 0):,}".replace(",", " ")])
-        return items
-    return []
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:

@@ -63,6 +63,14 @@ class SfmColmap(Phase):
             "images": self.ws.abs("00_ingest/images"),
         }
 
+    def steps(self) -> list[str]:
+        # on the CPU, COLMAP verifies the pairs while matching them
+        gpu = ["geometrická verifikácia"] if self._match_device() == "cuda" else []
+        return [
+            "extrakcia príznakov", "výber dvojíc", "párovanie", *gpu, "mapping", "undistorcia",
+            "zarovnanie a export",
+        ]  # fmt: skip
+
     def run(self) -> dict[str, Path]:
         self._check_supported()
         for name in ("_work", "sparse", "images_undistorted"):
@@ -255,7 +263,7 @@ class SfmColmap(Phase):
         work: Path,
     ) -> None:
         """Match + verify the given pairs in chunks, so that progress can be reported."""
-        stage = self.progress.stage(0.1, 0.85, "párovanie")
+        stage = self.progress.stage(0.1, 0.85, "párovanie")  # + geometric verification
         chunk = max(len(pairs) // MATCH_CHUNKS, MIN_MATCH_CHUNK)
         pairs_file = work / "pairs.txt"
         pairing = pycolmap.ImportedPairingOptions()
@@ -293,14 +301,16 @@ class SfmColmap(Phase):
         try:
             ids = {img.name: img.image_id for img in db.read_all_images()}
             descs = [np.asarray(db.read_descriptors(ids[n]).data) for n in names]
-            stage = self.progress.stage(0.1, 0.4, "párovanie (GPU)")
+            stage = self.progress.stage(0.1, 0.4, "párovanie")
             for i, j, m in match_pairs(
                 descs,
                 pairs,
                 max_ratio=sift.max_ratio,
                 max_distance=sift.max_distance,
                 cross_check=sift.cross_check,
-                on_progress=lambda done: stage.update(done / len(pairs), f"{done}/{len(pairs)}"),
+                on_progress=lambda done: stage.update(
+                    done / len(pairs), f"GPU, {done}/{len(pairs)}"
+                ),
             ):
                 db.write_matches(ids[names[i]], ids[names[j]], m[: matching.max_num_matches])
         finally:
