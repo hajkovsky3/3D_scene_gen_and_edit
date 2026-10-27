@@ -214,6 +214,7 @@ def test_cli_config_profiles_and_implemented():
     from scenepipe.cli import is_implemented, load_config, profiles
 
     assert profiles()[0] == "default" and "fast" in profiles()
+    assert "tag_synonyms" not in profiles()  # data file, not a profile
     assert load_config("01_sfm")["matcher"] == "auto"
     assert load_config("01_sfm", "fast")["matcher"] == "retrieval"
     assert load_config("01_sfm", "fast", ["matcher=exhaustive"])["matcher"] == "exhaustive"

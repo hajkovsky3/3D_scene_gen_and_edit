@@ -49,9 +49,17 @@ def load_config(phase: str, profile: str | None = None, overrides: list[str] = (
 
 
 def profiles() -> list[str]:
-    """Available profiles: 'default' plus every configs/*.yaml except local files."""
-    names = [p.stem for p in CONFIG_DIR.glob("*.yaml")]
-    return ["default"] + sorted(n for n in names if n != "default" and not n.startswith("local"))
+    """Available profiles: 'default' plus every configs/*.yaml except local files whose
+    top-level keys are all phase sections (skips data files such as tag_synonyms.yaml)."""
+    sections = {section(p) for p in PHASES}
+    names = []
+    for path in CONFIG_DIR.glob("*.yaml"):
+        if path.stem == "default" or path.stem.startswith("local"):
+            continue
+        data = _read_yaml(path)
+        if isinstance(data, dict) and data and set(data) <= sections:
+            names.append(path.stem)
+    return ["default", *sorted(names)]
 
 
 def impl_module(phase: str, impl: str) -> str:
