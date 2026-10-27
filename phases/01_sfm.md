@@ -246,8 +246,18 @@ test: `tests/contracts/test_p01.py` (syntetická miestnosť so známymi kamerami
   jeden nič. Orientácia bodu pomáha málo: s nulovou orientáciou o ~5 % viac zhôd, s opačným
   znamienkom rovnako; ponechaná konvencia COLMAPu. Dvojnásobná mierka (konvencia OpenCV)
   ~6 % zhôd stratí.
-- [ ] LightGlue na GPU: čas a presnosť póz na Mip-NeRF 360 (`sfm_poses`) a *izbe*, potom
-  rozhodnúť o `matcher_backend` v `default.yaml` (čaká na súhlas s použitím GPU)
+- [x] LightGlue na GPU (2026-10-27, *m360_room*, `fast`, GTX 1650 vo WSL, 3 897 dvojíc, oba behy
+  300/300 kamier, chyba voči GT pózam ako vyššie):
+
+  | `matcher_backend` | Párovanie | Celý beh | Rotácia | Poloha | Body | Reprojekčná chyba |
+  |---|---|---|---|---|---|---|
+  | `default` (najbližší susedia) | 87 s | 6 min | 0,057° | 0,043 % | 51 180 | 0,66 px |
+  | `lightglue` | 1 535 s | 29 min | 0,030° | 0,038 % | 35 385 | 1,03 px |
+
+  LightGlue páruje ~0,4 s na dvojicu (17× pomalšie), presnosť je lepšia len o stotiny stupňa.
+  Na dobre nasnímanej scéne sa neoplatí, default ostáva `default`. Prínos čakať pri ťažších
+  scénach s malým prekryvom (scéna z telefónu); *counter* sa pre jasný výsledok nespúšťal.
+- [ ] LightGlue na scéne z telefónu (*izba*, čaká na dáta)
 - [ ] ALIKED / vocab tree (čaká na schválenie stiahnutia váh)
 - [ ] (voliteľné) implementácia `vggt`
 
