@@ -240,8 +240,25 @@ Porovnanie na Mip-NeRF 360 scénach (room, counter, kitchen) s publikovanými č
   Small na vyrenderovanom obraze, alpha > 0,5). Posun nulou dáva porovnávaciu hodnotu.
   Pozor: `depth_reg` trénuje tú istú koreláciu na tréningových pohľadoch, skóre preto nie je
   od prioru nezávislé, `hole_frac` áno. Testy na CPU (posun kamery, skóre), na GPU zatiaľ nebežal
-- [ ] `novel_views` na *m360_room* pre `depth_reg` 0 / 0,05 / 0,2 a porovnať s vizuálnym
-  hodnotením z 2026-10-18 (čaká na súhlas s GPU)
+- [x] `novel_views` na *m360_room* pre `depth_reg` 0 / 0,05 / 0,2 (2026-10-27, `fast`, `aniso_reg` 0,7,
+  GTX 1650 vo WSL; 38 testovacích pohľadov v polovičnom rozlíšení 778×518, posun nahor a dozadu
+  o 0 / 0,3 / 0,6 jednotky; v zátvorke najhorší pohľad):
+
+  | `depth_reg` | PSNR / SSIM / LPIPS | `hole_frac` 0 | 0,3 | 0,6 | `depth_inconsistency` 0 | 0,3 | 0,6 |
+  |---|---|---|---|---|---|---|---|
+  | 0 | 30,60 / 0,928 / 0,154 | 0,056 | 0,069 | 0,174 (0,60) | 0,100 | 0,181 | 0,318 |
+  | 0,05 | 30,68 / 0,928 / 0,154 | 0,036 | 0,036 | 0,083 (0,44) | 0,053 | 0,152 | 0,410 |
+  | **0,2** (default) | 30,23 / 0,926 / 0,157 | 0,049 | 0,047 | 0,107 (0,52) | 0,045 | 0,173 | 0,393 |
+
+  Rendery pri posune 0,6 (kamera nad oblasťou bez fotiek, strop) potvrdzujú hodnotenie
+  z 2026-10-18: pri 0 čierne diery a ihly, pri 0,05 diery väčšinou zaplnené so škvrnitým oparom,
+  pri 0,2 zakryje diery béžový opar cez celý obraz (na dvoch pohľadoch `hole_frac` = 0, hoci obraz
+  je horší). **Obmedzenie metriky:** `hole_frac` opar odmeňuje ako „bez dier“ a `depth_inconsistency`
+  je pri veľkom posune nespoľahlivé (hodnoty > 1 = záporná korelácia) a závisí od prioru. Na voľbu
+  `depth_reg` ani jedno skóre samo nestačí; zmysluplnejší je posun 0,3 (bližšie k trajektórii),
+  kde má 0,05 najmenej dier aj najmenšiu nekonzistenciu. Default 0,2 ostáva podľa vizuálneho
+  hodnotenia autora; kandidát na zmenu je 0,05 (lepšie PSNR aj skóre, menej oparu), rozhodnúť
+  pohľadom vo vieweri. Chýba skóre na opar (napr. nízky kontrast/gradienty v renderi).
 - [x] kompatibilita PLY so SuperSplat: hlavička je bajt po bajte zhodná s formátom pôvodnej
   implementácie 3DGS (test `test_ply_header_matches_3dgs` v `tests/contracts/test_core.py`);
   výstupy 02 a 03 z *m360_room* autor otvoril v SuperSplate 2026-10-26 bez problémov

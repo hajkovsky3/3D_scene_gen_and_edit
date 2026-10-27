@@ -33,7 +33,7 @@ Stav:
 | Depth Anything V2 **Small** (`depth-anything/Depth-Anything-V2-Small-hf`) | 02 (hĺbkový prior, `depth_reg`) | Apache 2.0 | Apache 2.0 (iba Small; Base/Large/Giant sú CC-BY-NC-4.0) | OK | 24,8 M parametrov, ~99 MB, stiahnuté so súhlasom autora 2026-10-18 do `checkpoints/huggingface`; citovať Yang et al. 2024 |
 | Hugging Face `transformers` 5.x (+ `huggingface_hub`, `safetensors`, `tokenizers`) | 02 (hĺbkový prior) | Apache 2.0 | — | OK | tranzitívne: `regex` (Apache 2.0), `hf-xet` (Apache 2.0), `httpx` (BSD-3), `tqdm` (MIT/MPL-2.0), `typer`, `click` (BSD/MIT); extra `depth` v `pyproject.toml` |
 | AlexNet (`torchvision`, `alexnet-owt-7be5be79.pth`) | 02 (LPIPS) | BSD-3 | BSD-3 (torchvision), trénované na ImageNet | OK | stiahnuté so súhlasom autora 2026-10-14, iba na meranie LPIPS; vypnuteľné `lpips: false` |
-| VGG16 (`torchvision`, `vgg16-397923af.pth`) | 02, 03 (LPIPS pri `lpips_net: vgg`) | BSD-3 | BSD-3 (torchvision), trénované na ImageNet | OK, zatiaľ nestiahnuté | ~528 MB, iba na porovnanie s článkom 3DGS; stiahne sa pri prvom použití, pred tým sa opýtať |
+| VGG16 (`torchvision`, `vgg16-397923af.pth`) | 02, 03 (LPIPS pri `lpips_net: vgg`) | BSD-3 | BSD-3 (torchvision), trénované na ImageNet | OK | ~528 MB, iba na porovnanie s článkom 3DGS; stiahnuté so súhlasom autora 2026-10-27 (SHA-256 `397923af…`) |
 | RAM++ | 04 | Apache 2.0 | OVERIŤ | OVERIŤ | |
 | Grounding DINO (Swin-T/B, open-source verzia) | 05 | Apache 2.0 | Apache 2.0 | OK | verzie 1.5/1.6 a DINO-X sú len API |
 | SAM 2 / 2.1 | 05 | Apache 2.0 | Apache 2.0 | OK | |
