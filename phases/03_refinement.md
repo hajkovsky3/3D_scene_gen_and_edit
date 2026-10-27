@@ -269,7 +269,8 @@ a confidence s fázou 03 a bez nej (`impl: none`).
   takmer v každom pohľade, leží mimo kvádra a vyreže sa. Dotréning ho nevráti (nepridáva
   gaussiány). Na *room* (kamera vnútri miestnosti) to stálo len výhľad z okna. Možné riešenia:
   kváder zo stredov kamier namiesto bodov SfM, väčší `crop_margin`, alebo `crop` vypnúť pre
-  scény, kde kamery obiehajú objekt; zatiaľ sa default nemení (rozhodnutie z 2026-10-26).
+  scény, kde kamery obiehajú objekt. Autor 2026-10-27 rozhodol ponechať `crop` zapnutý aj pre tieto
+  scény (prijatý kompromis ako pri výhľade z okna, pozri Riziká).
 - [ ] overenie na scéne z telefónu (*izba*), kde floaterov mimo kamier je viac (video *izby*
   nie je na disku, čaká na dáta)
 
