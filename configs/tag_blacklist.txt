@@ -1,0 +1,119 @@
+# Tags of phase 04_tagging that are not objects. They go to "excluded" in tags.json.
+# One term per line, compared after synonyms (configs/tag_synonyms.yaml). The RAM++ tag list
+# also contains verbs, colors and scene types; most of them are already removed by its
+# calibrated per-tag thresholds (class_thresholds), this list catches the rest.
+
+# scenes and room types
+room
+living room
+family room
+bedroom
+kitchen
+bathroom
+dining room
+office
+home office
+home
+house
+house exterior
+apartment
+interior design
+indoor
+outdoor
+hotel room
+studio
+den
+hall
+hallway
+loft
+library
+living space
+construction site
+scene
+# too general (duplicate detections in 05)
+furniture
+object
+item
+thing
+stuff
+equipment
+decoration
+decor
+accessory
+home appliance
+appliance
+electronic
+food
+fruit
+vegetable
+ingredient
+meal
+container
+kitchenware
+kitchen utensil
+utensil
+tool
+instrument
+animal
+toy
+product
+material
+# materials and textures
+wood
+wooden
+plastic
+metal
+glass
+fabric
+granite
+marble
+plywood
+# colors
+black
+white
+gray
+grey
+brown
+tan
+beige
+red
+orange color
+yellow
+green
+blue
+teal
+purple
+pink
+gold
+silver
+color
+# verbs and adjectives
+sit
+stand
+fill
+lay
+lie
+see
+show
+use
+make
+contain
+surround
+decorate
+hang
+catch
+break
+play
+live
+open
+close-up
+clean
+modern
+dark
+light
+bright
+flat
+# image-level terms
+image
+photo
+picture

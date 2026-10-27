@@ -16,3 +16,7 @@ reconstruction:
 # --- 03_refinement ---
 refinement:
   finetune_steps: 1000      # ~2 min namiesto ~4,5 min, najhorší pohľad horší (pozri phases/03_refinement.md)
+
+# --- 04_tagging ---
+tagging:
+  sample_frames: 15         # ~15 s tagovania namiesto ~30 s (načítanie modelu ~30 s ostáva)

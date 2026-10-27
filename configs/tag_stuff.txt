@@ -1,0 +1,11 @@
+# "Stuff" classes of phase 04_tagging: surfaces without a clear object boundary. With
+# keep_stuff_classes: true they stay in the vocabulary with "kind": "stuff" (supports for the
+# relation "on" in 08), otherwise they go to "excluded". One term per line, after synonyms.
+floor
+wall
+ceiling
+ground
+grass
+sky
+road
+sidewalk

@@ -34,7 +34,10 @@ Stav:
 | Hugging Face `transformers` 5.x (+ `huggingface_hub`, `safetensors`, `tokenizers`) | 02 (hĺbkový prior) | Apache 2.0 | — | OK | tranzitívne: `regex` (Apache 2.0), `hf-xet` (Apache 2.0), `httpx` (BSD-3), `tqdm` (MIT/MPL-2.0), `typer`, `click` (BSD/MIT); extra `depth` v `pyproject.toml` |
 | AlexNet (`torchvision`, `alexnet-owt-7be5be79.pth`) | 02 (LPIPS) | BSD-3 | BSD-3 (torchvision), trénované na ImageNet | OK | stiahnuté so súhlasom autora 2026-10-14, iba na meranie LPIPS; vypnuteľné `lpips: false` |
 | VGG16 (`torchvision`, `vgg16-397923af.pth`) | 02, 03 (LPIPS pri `lpips_net: vgg`) | BSD-3 | BSD-3 (torchvision), trénované na ImageNet | OK | ~528 MB, iba na porovnanie s článkom 3DGS; stiahnuté so súhlasom autora 2026-10-27 (SHA-256 `397923af…`) |
-| RAM++ | 04 | Apache 2.0 | OVERIŤ | OVERIŤ | |
+| RAM++ (`ram` z github.com/xinyu1205/recognize-anything, commit `7cb804a`; váhy `ram_plus_swin_large_14m.pth` z HF `xinyu1205/recognize-anything-plus-model`) | 04 | Apache 2.0 (LICENSE + NOTICE) | Apache 2.0 (metadáta a karta modelu na HF) | OK | váhy 3,01 GB (SHA-256 `497c1788…`), stiahnuté so súhlasom autora 2026-10-27 do `checkpoints/ram_plus`; balík inštalovaný `--no-deps` (pripnuté staré verzie v `requirements.txt` netreba), kód sa nekopíruje ani neupravuje, nekompatibility s transformers 5 obchádza `ram_plus.py` za behu; opisy tagov v checkpointe vygenerovalo GPT (autori RAM++), my OpenAI API nevoláme; citovať Huang et al. 2023 (RAM++) a Zhang et al. 2023 (RAM) |
+| `bert-base-uncased` (iba `vocab.txt`, `config.json`, `tokenizer_config.json`) | 04 (veľkosť slovníka hlavy RAM++) | Apache 2.0 | — (bez váh) | OK | ~0,2 MB, stiahnuté so súhlasom autora 2026-10-27 do `checkpoints/bert-base-uncased` |
+| timm 1.0 | 04 (Swin-L RAM++) | Apache 2.0 | — | OK | extra `tagging` v `pyproject.toml` |
+| SciPy | 04 (import v `ram`) | BSD-3 | — | OK | extra `tagging` |
 | Grounding DINO (Swin-T/B, open-source verzia) | 05 | Apache 2.0 | Apache 2.0 | OK | verzie 1.5/1.6 a DINO-X sú len API |
 | SAM 2 / 2.1 | 05 | Apache 2.0 | Apache 2.0 | OK | |
 | SAM 3 | 05 alt | SAM License | SAM License, prístup cez HF | HRANIČNÉ | prečítať LICENSE pred použitím |

@@ -1,0 +1,17 @@
+# Synonyms of phase 04_tagging: canonical: [aliases]. Applied to model tags, the blacklist,
+# the stuff list and input/vocabulary.txt. Aliases include RAM++ spellings ("dinning table").
+sofa: [couch, loveseat]
+television: [tv, television set]
+floor: [hardwood, hardwood floor, wood floor, tile floor, flooring, parquet, kitchen floor]
+counter: [kitchen counter, counter top, countertop]
+bookcase: [bookshelf]
+dining table: [dinning table, kitchen table]
+coffee table: [cocktail table]
+footstool: [hassock, footstall, footrest, ottoman]
+teddy bear: [teddy]
+dishwasher: [dish washer]
+stove: [cooker, gas stove]
+plant: [houseplant, potted plant]
+fridge: [refrigerator]
+bulldozer: [dozer]
+doormat: [door mat]

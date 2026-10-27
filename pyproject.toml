@@ -20,6 +20,13 @@ gs = ["torch", "torchvision", "gsplat>=1.5,<1.6", "torchmetrics", "pillow"]
 depth = ["transformers>=4.45"]
 # SIFT + LightGlue matching of phase 01 (matcher_backend: lightglue), needs torch
 lightglue = ["kornia>=0.8,<0.10"]
+# phase 04 (ram_plus): RAM++ code, pinned; its setup.cfg declares no dependencies, needs torch
+tagging = [
+  "ram @ git+https://github.com/xinyu1205/recognize-anything.git@7cb804a8609e9f4b1a50b7f31436d2df40bb9481",
+  "timm>=1.0",
+  "scipy",
+  "pillow",
+]
 monitor = ["customtkinter>=5.2,<5.3"]
 
 [tool.setuptools.packages.find]

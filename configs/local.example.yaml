@@ -21,3 +21,4 @@ phases:
   01_sfm: wsl_gs              # párovanie na GPU (PyTorch v sp-gs)
   02_reconstruction: wsl_gs
   03_refinement: wsl_gs        # metriky pred/po cez gsplat
+  04_tagging: wsl_gs           # RAM++ na GPU (zatiaľ v sp-gs, pozri envs/README.md)

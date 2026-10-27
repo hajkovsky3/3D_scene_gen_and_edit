@@ -6,8 +6,8 @@ Fázy komunikujú iba cez súbory, takže každá skupina môže mať vlastné p
 | Prostredie | Fázy | Kľúčové balíky |
 |---|---|---|
 | `sp-core` | 00, 01, runner | opencv, pillow, pycolmap, numpy |
-| `sp-gs` | 02, 03, 07, 12, 13 (+ 01 s GPU párovaním) | torch, gsplat, transformers (hĺbkový prior), viser, LaMa, pycolmap |
-| `sp-seg` | 04, 05, 06, 10 | torch, Grounding DINO, SAM 2, open_clip, RAM++ |
+| `sp-gs` | 02, 03, 07, 12, 13 (+ 01 s GPU párovaním, zatiaľ aj 04) | torch, gsplat, transformers (hĺbkový prior), viser, LaMa, pycolmap |
+| `sp-seg` | 05, 06, 10 (04 sa presunie sem, ak bude treba) | torch, Grounding DINO, SAM 2, open_clip, RAM++ |
 | `sp-llm` | 08 (VLM), 09 | transformers / vLLM, Qwen |
 | `sp-gen` | 11 | TRELLIS, diffusers (FLUX) |
 
@@ -53,3 +53,16 @@ pytest tests/contracts/test_p02.py # prvý beh skompiluje gsplat do ~/.cache/tor
 
 Na vzdialenom Linux serveri s GPU platí to isté bez kroku WSL (CUDA repozitár podľa distribúcie,
 `TORCH_CUDA_ARCH_LIST` podľa GPU).
+
+### Fáza 04 (RAM++) v `sp-gs`
+
+Fáza 04 zatiaľ beží v `sp-gs` (torch a transformers tam už sú). Do `sp-seg` sa presunie,
+ak si SAM 2 alebo Grounding DINO vynútia iné verzie.
+
+```bash
+source ~/sp-gs.sh
+pip install -e ".[tagging]"   # ram (pripnutý commit), timm, scipy
+# váhy (3,01 GB) a slovník BERT tokenizera do checkpoints/ (iba so súhlasom, pozri docs/licenses.md):
+python -c "from huggingface_hub import hf_hub_download as d; d('xinyu1205/recognize-anything-plus-model', 'ram_plus_swin_large_14m.pth', local_dir='checkpoints/ram_plus'); [d('google-bert/bert-base-uncased', f, local_dir='checkpoints/bert-base-uncased') for f in ('vocab.txt', 'config.json', 'tokenizer_config.json')]"
+pytest tests/contracts/test_p04.py
+```
