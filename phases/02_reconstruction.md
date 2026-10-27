@@ -196,9 +196,20 @@ Porovnanie na Mip-NeRF 360 scénach (room, counter, kitchen) s publikovanými č
   Rovnaká konfigurácia na *izbe* dala raz PSNR 22,83 a raz 23,26: tréning na GPU nie je
   deterministický a rozdiely do ~0,4 dB sú šum. Spolu −45 % času na *izbe*, −20 % na counter
   (menšie snímky, menší podiel ceny za pixel) bez merateľnej straty kvality.
-- [ ] overenie na *counter* a *kitchen* s plným tréningom (30k), porovnanie s 3DGS s LPIPS(vgg).
-  Pripravené: voľba `lpips_net: vgg` (2026-10-27), 00 pre *counter* (240 snímok, CPU). Čaká na
-  súhlas s GPU (01 counter ~7 min, 2 × tréning ~2 h) a so stiahnutím váh VGG16 (~528 MB)
+- [x] overenie na *counter* a *kitchen* s plným tréningom (2026-10-27, GTX 1650 vo WSL): 01 s profilom
+  `fast` (default s 8 192 bodmi pri global mapperi minul RAM Windowsu), 02 default (`mcmc`, 1 M
+  gaussiánov, 30k krokov, `aniso_reg` 0,7, `depth_reg` 0,2), `images_2`, každý 8. pohľad testovací.
+  Porovnanie s 3DGS (doplnkový materiál článku, 30k, vlastné behy autorov; LPIPS tam s VGG, pre
+  tieto scény sme ho neoverili):
+
+  | Scéna | Kamery z 01 | PSNR | SSIM | LPIPS(vgg) | Tréning | 3DGS PSNR / SSIM |
+  |---|---|---|---|---|---|---|
+  | counter | 240/240, 0,52 px | **29,76** | **0,929** | 0,198 | 5 426 s | 28,70 / 0,905 |
+  | kitchen | 279/279, 0,35 px | **31,27** | **0,925** | 0,153 | 13 680 s* | 30,32 / 0,922 |
+
+  \* GPU časť tréningu zdieľala hra, porovnateľný čas je okolo 1,5 h ako pri *counter*.
+  Špička VRAM hlásená 4 241 MB, teda nad 4 GB GTX 1650 (ovládač vo WSL presahuje do zdieľanej
+  pamäte); 1 M gaussiánov pri plnom rozlíšení je na tejto karte na hrane.
 - [x] regularizácia ihiel `aniso_reg` (2026-10-18, *m360_room*, `fast`: 7k krokov, 500k gaussiánov;
   ihla = pomer najdlhšej a strednej osi > 10, viditeľná = navyše opacity > 0,3):
 

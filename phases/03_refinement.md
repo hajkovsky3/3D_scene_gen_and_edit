@@ -256,6 +256,20 @@ a confidence s fázou 03 a bez nej (`impl: none`).
   ho zlepší (−8,7 → −4,4 dB pri 1000 krokoch) za cenu 440 gaussiánov. Či sa nevrátia škvrny,
   treba pozrieť v SuperSplate, default ostáva 0.
 - [ ] vizuálne porovnanie `isolated_keep_extent` 0 / 5 s dotréningom (výhľad z okna, škvrny)
+- [x] default na plne natrénovaných scénach (2026-10-27, výstupy 02 s 30k krokmi, 1 M gaussiánov,
+  LPIPS s VGG, dotréning 2000 krokov):
+
+  | Scéna | `crop` odstránil | Ponechané | PSNR pred → po | LPIPS pred → po | Medián / najhorší pohľad |
+  |---|---|---|---|---|---|
+  | counter | 18 584 | 883 860 | 29,76 → 28,17 | 0,198 → 0,209 | −0,6 / −6,0 dB |
+  | kitchen | 51 634 | 900 548 | 31,27 → **23,04** | 0,153 → 0,217 | −8,3 / −15,1 dB |
+
+  **Ohraničenie nevhodné pre scény okolo objektu.** V *counter* a *kitchen* kamera obieha objekt
+  na stole a body SfM sa sústredia okolo neho; pozadie (kvetina, stolička, okno), ktoré je vidno
+  takmer v každom pohľade, leží mimo kvádra a vyreže sa. Dotréning ho nevráti (nepridáva
+  gaussiány). Na *room* (kamera vnútri miestnosti) to stálo len výhľad z okna. Možné riešenia:
+  kváder zo stredov kamier namiesto bodov SfM, väčší `crop_margin`, alebo `crop` vypnúť pre
+  scény, kde kamery obiehajú objekt; zatiaľ sa default nemení (rozhodnutie z 2026-10-26).
 - [ ] overenie na scéne z telefónu (*izba*), kde floaterov mimo kamier je viac (video *izby*
   nie je na disku, čaká na dáta)
 
