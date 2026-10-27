@@ -173,7 +173,21 @@ so známymi maskami, pomocné funkcie bez modelu), `tests/test_masks.py`. Beží
   kitchen island*, *bowl / mixing bowl*, *blender / pitcher / juicer*) a niektoré sú zlé
   (skrinka ako *kitchen island*, krabica od vajec ako *juice*). Krátkych trackov (1–5 snímok)
   je 64 zo 169.
-- [ ] default (všetky snímky) s prenosom trackov; *room* a *kitchen*
+- [x] *room* a *kitchen* s profilom `fast` (2026-10-27, rovnaký stroj):
+
+  | Scéna | Slovník | Snímky | Čas | Masky / snímka | Tracky | Medián dĺžky | Krátke (≤ 5) | Špička VRAM SAM 2 |
+  |---|---|---|---|---|---|---|---|---|
+  | counter | 42 | 80 | 17,7 min | 25,6 | 169 | 9 | 64 | 3,8 GB |
+  | room | 31 | 100 | 15,6 min | 15,9 | 205 | 4 | 122 | 2,9 GB |
+  | kitchen | 11 | 93 | 5,4 min | 6,7 | 22 | 12 | 6 | 1,0 GB |
+
+  *room*: správne klavír, stolička, kvetina, reproduktor, dvere (*doorway*), stolík, laptop,
+  kreslo; chyby: veľké plochy (stena za TV, koberec) dostávajú labely *television*, *floor*,
+  *mat*, *carpet* a tracky sa na nich trhajú (kamera prechádza miestnosťou, preto kratšie
+  tracky než pri obiehaní objektu). *kitchen*: lego buldozér (*excavator*) a podložky presné;
+  doska stola má v jednom tracku labely *floor / table / carpet / mat*. Objekty mimo
+  slovníka (fľaše, poháre, miska v pozadí) sa nesegmentujú vôbec, to je obmedzenie 04.
+- [ ] default (všetky snímky) s prenosom trackov
 - [ ] poradie snímok podľa covisibility pre neusporiadané fotky
 - [ ] mIoU na ručne anotovaných snímkach (sekcia Evaluácia)
 
