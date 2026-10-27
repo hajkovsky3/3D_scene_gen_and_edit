@@ -38,8 +38,8 @@ Stav:
 | `bert-base-uncased` (iba `vocab.txt`, `config.json`, `tokenizer_config.json`) | 04 (veľkosť slovníka hlavy RAM++) | Apache 2.0 | — (bez váh) | OK | ~0,2 MB, stiahnuté so súhlasom autora 2026-10-27 do `checkpoints/bert-base-uncased` |
 | timm 1.0 | 04 (Swin-L RAM++) | Apache 2.0 | — | OK | extra `tagging` v `pyproject.toml` |
 | SciPy | 04 (import v `ram`) | BSD-3 | — | OK | extra `tagging` |
-| Grounding DINO (Swin-T/B, open-source verzia) | 05 | Apache 2.0 | Apache 2.0 | OK | verzie 1.5/1.6 a DINO-X sú len API |
-| SAM 2 / 2.1 | 05 | Apache 2.0 | Apache 2.0 | OK | |
+| Grounding DINO Swin-T (`IDEA-Research/grounding-dino-tiny`, cez `transformers`) | 05 | Apache 2.0 | Apache 2.0 (karta modelu na HF) | OK | 689 MB (`model.safetensors`), stiahnuté so súhlasom autora 2026-10-27 do `checkpoints/huggingface`; verzie 1.5/1.6 a DINO-X sú len API; citovať Liu et al., ECCV 2024 |
+| SAM 2.1 Hiera-S (`facebook/sam2.1-hiera-small`, cez `transformers`) | 05 | Apache 2.0 | Apache 2.0 (karta modelu na HF) | OK | 184 MB, stiahnuté so súhlasom autora 2026-10-27 do `checkpoints/huggingface`; large (~900 MB) zatiaľ nestiahnutý; citovať Ravi et al., ICLR 2025 |
 | SAM 3 | 05 alt | SAM License | SAM License, prístup cez HF | HRANIČNÉ | prečítať LICENSE pred použitím |
 | OpenCLIP (ViT-H-14 laion2b) | 06, 10 | MIT | MIT | OK | |
 | SigLIP / SigLIP 2 | 06 alt | Apache 2.0 | Apache 2.0 | OK | |
@@ -53,7 +53,7 @@ Stav:
 | viser | 13 | Apache 2.0 | — | OK | |
 | CustomTkinter 5.2 (`customtkinter`) | monitor | MIT (repozitár; PyPI metadáta uvádzajú CC0 1.0) | — | OK | okno monitora behu; závislosti `darkdetect` (BSD-3), `packaging` (Apache 2.0 / BSD-2), Tk zo štandardnej knižnice Pythonu |
 | SuperSplat | 13 (externé) | MIT | — | OK | iba nástroj na prezeranie |
-| pycocotools | 05+ | BSD-2 | — | OK | |
+| pycocotools | 05+ (nepoužité) | BSD-2 | — | OK | COCO RLE píše vlastná implementácia `core/masks.py`; pycocotools iba voliteľne v teste zhody |
 | NetworkX | 08 | BSD-3 | — | OK | |
 
 ## Nekomerčné (iba alternatívy, baseline a vyhodnotenie)

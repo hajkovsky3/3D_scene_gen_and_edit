@@ -20,3 +20,8 @@ refinement:
 # --- 04_tagging ---
 tagging:
   sample_frames: 15         # ~15 s tagovania namiesto ~30 s (načítanie modelu ~30 s ostáva)
+
+# --- 05_segmentation ---
+segmentation:
+  frame_stride: 3           # každá 3. snímka: counter 18 min namiesto ~1 h (GTX 1650)
+  redetect_every: 5         # okno 5 spracovaných snímok = 15 pôvodných

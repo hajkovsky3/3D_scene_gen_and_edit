@@ -6,8 +6,8 @@ Fázy komunikujú iba cez súbory, takže každá skupina môže mať vlastné p
 | Prostredie | Fázy | Kľúčové balíky |
 |---|---|---|
 | `sp-core` | 00, 01, runner | opencv, pillow, pycolmap, numpy |
-| `sp-gs` | 02, 03, 07, 12, 13 (+ 01 s GPU párovaním, zatiaľ aj 04) | torch, gsplat, transformers (hĺbkový prior), viser, LaMa, pycolmap |
-| `sp-seg` | 05, 06, 10 (04 sa presunie sem, ak bude treba) | torch, Grounding DINO, SAM 2, open_clip, RAM++ |
+| `sp-gs` | 02, 03, 07, 12, 13 (+ 01 s GPU párovaním, zatiaľ aj 04 a 05) | torch, gsplat, transformers (hĺbkový prior), viser, LaMa, pycolmap |
+| `sp-seg` | 06, 10 (04 a 05 sa presunú sem, ak bude treba) | torch, Grounding DINO, SAM 2, open_clip, RAM++ |
 | `sp-llm` | 08 (VLM), 09 | transformers / vLLM, Qwen |
 | `sp-gen` | 11 | TRELLIS, diffusers (FLUX) |
 
@@ -65,4 +65,13 @@ pip install -e ".[tagging]"   # ram (pripnutý commit), timm, scipy
 # váhy (3,01 GB) a slovník BERT tokenizera do checkpoints/ (iba so súhlasom, pozri docs/licenses.md):
 python -c "from huggingface_hub import hf_hub_download as d; d('xinyu1205/recognize-anything-plus-model', 'ram_plus_swin_large_14m.pth', local_dir='checkpoints/ram_plus'); [d('google-bert/bert-base-uncased', f, local_dir='checkpoints/bert-base-uncased') for f in ('vocab.txt', 'config.json', 'tokenizer_config.json')]"
 pytest tests/contracts/test_p04.py
+```
+
+### Fáza 05 (Grounding DINO + SAM 2) v `sp-gs`
+
+Oba modely sú v `transformers` (už v `sp-gs`), netreba nič kompilovať. Váhy (iba so súhlasom):
+
+```bash
+python -c "from huggingface_hub import snapshot_download as d; [d(r, cache_dir='checkpoints/huggingface', allow_patterns=['*.json', '*.txt', 'model.safetensors'])  for r in ('IDEA-Research/grounding-dino-tiny', 'facebook/sam2.1-hiera-small')]"
+pytest tests/contracts/test_p05.py tests/test_masks.py
 ```

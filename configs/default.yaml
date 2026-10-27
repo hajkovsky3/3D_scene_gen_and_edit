@@ -110,15 +110,24 @@ tagging:
 # --- 05_segmentation ---
 segmentation:
   impl: gdino_sam2
-  gdino_model: swint_ogc
-  sam2_model: sam2.1_hiera_large   # small/tiny pre slabší HW
+  gdino_model: IDEA-Research/grounding-dino-tiny
+  sam2_model: facebook/sam2.1-hiera-small   # large ~900 MB (neschválené), na 4 GB VRAM na hrane
+  model_dir: checkpoints/huggingface
+  device: auto
+  frame_stride: 1           # spracovať každú k-tu registrovanú snímku
   box_threshold: 0.30
   text_threshold: 0.25
   vocab_batch: 20
+  nms_iou: 0.7              # NMS boxov naprieč labelmi
   tracking: true
   redetect_every: 10
+  track_iou: 0.5            # IoU boxov pri párovaní detekcií s trackmi
+  carry_windows: 2          # koľko okien za sebou track prežije bez detekcie
   min_area_frac: 0.001
+  hole_area_frac: 0.0005    # vyplniť diery menšie ako tento podiel snímky
+  component_area_frac: 0.0005  # zahodiť časti masky menšie ako tento podiel (najväčšia ostáva)
   max_masks_per_frame: 100
+  num_previews: 8
 
 # --- 06_mask_embedding ---
 mask_embedding:

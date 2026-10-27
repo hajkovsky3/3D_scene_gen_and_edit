@@ -22,3 +22,4 @@ phases:
   02_reconstruction: wsl_gs
   03_refinement: wsl_gs        # metriky pred/po cez gsplat
   04_tagging: wsl_gs           # RAM++ na GPU (zatiaľ v sp-gs, pozri envs/README.md)
+  05_segmentation: wsl_gs      # Grounding DINO + SAM 2 na GPU (sp-gs)
