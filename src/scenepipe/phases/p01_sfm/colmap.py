@@ -17,9 +17,17 @@ from PIL import Image
 from scenepipe.core.phase import ContractError, Phase, register
 from scenepipe.phases.p01_sfm.align import compute_alignment
 from scenepipe.phases.p01_sfm.retrieval import bow_similarity, select_pairs
-from scenepipe.phases.p01_sfm.torch_match import cuda_available, match_pairs
+from scenepipe.phases.p01_sfm.torch_match import (
+    cuda_available,
+    load_lightglue,
+    match_pairs,
+    match_pairs_lightglue,
+    sift_lightglue_inputs,
+)
 
 log = logging.getLogger(__name__)
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 JPEG_QUALITY = 95
 MAX_MEAN_REPROJ_PX = 2.0
@@ -32,12 +40,14 @@ MIN_MATCH_CHUNK = 100
 class SfmColmap(Phase):
     phase = "01_sfm"
     impl = "colmap"
-    impl_version = "3"
+    impl_version = "4"
     contract_version = 2
     defaults: ClassVar[dict[str, Any]] = {
         "features": "sift",
         "matcher": "auto",
         "matcher_backend": "default",
+        "lightglue_weights": "checkpoints/lightglue/sift_lightglue.pth",
+        "lightglue_min_score": 0.1,
         "mapper": "global",
         "fallback_incremental_below": 0.8,
         "single_camera": True,
@@ -64,8 +74,9 @@ class SfmColmap(Phase):
         }
 
     def steps(self) -> list[str]:
-        # on the CPU, COLMAP verifies the pairs while matching them
-        gpu = ["geometrická verifikácia"] if self._match_device() == "cuda" else []
+        # COLMAP's own CPU matcher verifies the pairs while matching them
+        torch_matching = self._match_device() == "cuda" or self._lightglue()
+        gpu = ["geometrická verifikácia"] if torch_matching else []
         return [
             "extrakcia príznakov", "výber dvojíc", "párovanie", *gpu, "mapping", "undistorcia",
             "zarovnanie a export",
@@ -133,7 +144,9 @@ class SfmColmap(Phase):
             pairs = [(i, j) for i in range(len(names)) for j in range(i + 1, len(names))]
         timer.lap("pairs")
         device = self._match_device()
-        if device == "cuda":
+        if self._lightglue():
+            self._match_pairs_lightglue(db, names, pairs, matching, work, device)
+        elif device == "cuda":
             self._match_pairs_torch(db, names, pairs, matching, work)
         else:
             self._match_pairs(db, names, pairs, matching, work)
@@ -206,10 +219,17 @@ class SfmColmap(Phase):
 
     def _check_supported(self) -> None:
         cfg = self.config
-        if cfg["features"] != "sift" or cfg["matcher_backend"] != "default":
+        if cfg["features"] != "sift":
             raise NotImplementedError(
-                "01_sfm/colmap: only features=sift with matcher_backend=default; ALIKED and "
-                "LightGlue need model downloads that are not approved yet (phases/01_sfm.md)"
+                "01_sfm/colmap: only features=sift; ALIKED needs a model download that is not "
+                "approved yet (phases/01_sfm.md)"
+            )
+        if cfg["matcher_backend"] not in ("default", "lightglue"):
+            raise ValueError(f"unknown matcher_backend {cfg['matcher_backend']!r}")
+        if self._lightglue() and not self._lightglue_weights().is_file():
+            raise FileNotFoundError(
+                f"01_sfm: LightGlue weights not found: {self._lightglue_weights()} "
+                "(download: phases/01_sfm.md, Konfigurácia)"
             )
         if cfg["matcher"] not in ("auto", "sequential", "exhaustive", "retrieval"):
             raise NotImplementedError(f"01_sfm/colmap: matcher {cfg['matcher']!r} not supported")
@@ -286,6 +306,57 @@ class SfmColmap(Phase):
         if self.config["use_gpu"]:
             log.info("01_sfm: no PyTorch with CUDA, matching on the CPU with COLMAP")
         return "cpu"
+
+    def _lightglue(self) -> bool:
+        return self.config["matcher_backend"] == "lightglue"
+
+    def _lightglue_weights(self) -> Path:
+        return REPO_ROOT / self.config["lightglue_weights"]
+
+    def _match_pairs_lightglue(
+        self,
+        db_path: Path,
+        names: list[str],
+        pairs: list[tuple[int, int]],
+        matching: pycolmap.FeatureMatchingOptions,
+        work: Path,
+        device: str,
+    ) -> None:
+        """SIFT + LightGlue in PyTorch (GPU if available), geometric verification in COLMAP."""
+        model = load_lightglue(str(self._lightglue_weights()), device)
+        db = pycolmap.Database.open(db_path)
+        try:
+            images = {img.name: img for img in db.read_all_images()}
+            cameras = {cam.camera_id: cam for cam in db.read_all_cameras()}
+            features = []
+            for n in names:
+                img = images[n]
+                cam = cameras[img.camera_id]
+                features.append(
+                    sift_lightglue_inputs(
+                        db.read_keypoints(img.image_id),
+                        db.read_descriptors(img.image_id).data,
+                        cam.width,
+                        cam.height,
+                    )
+                )
+            stage = self.progress.stage(0.1, 0.4, "párovanie")
+            for i, j, m in match_pairs_lightglue(
+                features,
+                pairs,
+                model,
+                min_score=float(self.config["lightglue_min_score"]),
+                on_progress=lambda done: stage.update(
+                    done / len(pairs), f"LightGlue ({device}), {done}/{len(pairs)}"
+                ),
+            ):
+                db.write_matches(
+                    images[names[i]].image_id, images[names[j]].image_id,
+                    m[: matching.max_num_matches],
+                )  # fmt: skip
+        finally:
+            db.close()
+        self._verify_pairs(db_path, names, pairs, work)
 
     def _match_pairs_torch(
         self,

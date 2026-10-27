@@ -2,7 +2,8 @@
 evaluation, report, validation). Spec: phases/03_refinement.md
 
 An implementation only provides `refine()`. Pruning runs on the CPU (NumPy); torch and gsplat
-are imported only for the evaluation (`eval: true`), so `eval: false` runs without a GPU.
+are imported only for the fine-tuning (`finetune_steps > 0`) and the evaluation (`eval: true`),
+so without them the phase runs without a GPU.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import time
 from abc import abstractmethod
 from pathlib import Path
 from typing import Any, ClassVar
@@ -29,12 +31,13 @@ CRITERIA = ("crop", "opacity", "views", "scale", "isolated", "aniso")
 JPEG_QUALITY = 95
 PSNR_CONSISTENCY_DB = 0.05
 PSNR_DROP_WARN_DB = 1.0
-REFINE_END = 0.5  # share of the phase progress taken by refine() when evaluating
+REFINE_SHARE = 0.5  # share of the phase progress taken by refine() when evaluating
+FINETUNE_SHARE = 0.6  # share taken by the fine-tuning (if any), out of the rest
 
 
 class RefinementBase(Phase):
     phase = "03_refinement"
-    contract_version = 2
+    contract_version = 3
     defaults: ClassVar[dict[str, Any]] = {
         "crop": True,
         "crop_quantile": 0.01,
@@ -44,10 +47,14 @@ class RefinementBase(Phase):
         "max_scale_frac": 0,
         "isolated_voxel": 0.02,
         "isolated_min_count": 4,
+        "isolated_keep_extent": 0,
         "max_aniso": 0,
         "aniso_action": "clamp",
+        "finetune_steps": 0,
+        "seed": 0,
         "eval": True,
         "lpips": True,
+        "lpips_net": "alex",
         "num_test_renders": 8,
     }
 
@@ -74,12 +81,28 @@ class RefinementBase(Phase):
         return [
             "načítanie",
             *self.refine_steps(),
+            *(["dotréning"] if self._finetunes() else []),
             *(["vyhodnotenie"] if self.config["eval"] else []),
         ]
 
     def refine_steps(self) -> list[str]:
         """Progress stages reported by refine(), in order."""
         return []
+
+    def _finetunes(self) -> bool:
+        """Fine-tuning runs only when refine() changes the gaussians (not for `none`)."""
+        return int(self.config["finetune_steps"]) > 0 and self.impl != "none"
+
+    def refine_end(self) -> float:
+        """Phase progress at the end of refine()."""
+        if not self.config["eval"]:
+            return 1 - FINETUNE_SHARE if self._finetunes() else 1.0
+        return (1 - FINETUNE_SHARE) * REFINE_SHARE if self._finetunes() else REFINE_SHARE
+
+    def _eval_start(self) -> float:
+        if not self._finetunes():
+            return self.refine_end()
+        return self.refine_end() + FINETUNE_SHARE * (1 - self.refine_end())
 
     def run(self) -> dict[str, Path]:
         cfg = self.config
@@ -98,6 +121,14 @@ class RefinementBase(Phase):
         g = read_ply(src)
 
         refined, removed, clamped, extra = self.refine(g, train, radius)
+        sh_degree = int(rec.get("sh_degree", 3))
+        antialiased = bool(rec_cfg.get("antialiased", True))
+        finetune_info = None
+        if refined is not None and self._finetunes():
+            size = tuple(rec["eval_resolution"])  # 02 trained at this resolution
+            refined, finetune_info = self._finetune(
+                refined, train, radius, size, sh_degree, antialiased
+            )
         ply = self.out_dir / "gaussians.ply"
         if refined is None:
             shutil.copyfile(src, ply)
@@ -106,8 +137,6 @@ class RefinementBase(Phase):
             write_ply(ply, refined)
         outs: dict[str, Path] = {"gaussians": ply}
 
-        sh_degree = int(rec.get("sh_degree", 3))
-        antialiased = bool(rec_cfg.get("antialiased", True))
         warnings: list[str] = []
         per_view: list[dict[str, Any]] = []
         if cfg["eval"] and test_ids:
@@ -125,6 +154,7 @@ class RefinementBase(Phase):
             "removed": removed,
             "clamped": clamped,
             "crop_box": extra.get("crop_box"),
+            "finetune": finetune_info,
             "scene_radius": round(radius, 6),
             "num_train_views": len(train),
             "before": _mean_metrics(per_view, "before"),
@@ -134,7 +164,7 @@ class RefinementBase(Phase):
             "eval_resolution": rec.get("eval_resolution") if per_view else None,
             "sh_degree": sh_degree,
             "antialiased": antialiased,
-            "lpips_net": "alex" if per_view and cfg["lpips"] else None,
+            "lpips_net": cfg["lpips_net"] if per_view and cfg["lpips"] else None,
             "warnings": warnings,
         }
         b, a = report["before"]["psnr"], report["after"]["psnr"]
@@ -143,6 +173,41 @@ class RefinementBase(Phase):
         outs["report"] = self.out_dir / "report.json"
         outs["report"].write_text(json.dumps(report, indent=2), encoding="utf-8")
         return outs
+
+    def _finetune(
+        self,
+        g: Gaussians,
+        train: list[Camera],
+        radius: float,
+        size: tuple[int, int],
+        sh_degree: int,
+        antialiased: bool,
+    ) -> tuple[Gaussians, dict[str, Any]]:
+        import torch
+
+        from scenepipe.phases.p03_refinement.finetune import finetune
+
+        if not torch.cuda.is_available():
+            raise RuntimeError("03_refinement: finetune_steps > 0 needs a CUDA GPU")
+        cfg = self.config
+        steps = int(cfg["finetune_steps"])
+        max_aniso = float(cfg["max_aniso"]) if cfg["aniso_action"] == "clamp" else 0.0
+        start, end = self.refine_end(), self._eval_start()
+        stage = self.progress.stage(start, end, "dotréning")
+        t0 = time.perf_counter()
+        out = finetune(
+            g,
+            [c.scaled(*size) for c in train],
+            lambda c: load_image(self.ws.abs(c.image), size=size),
+            steps,
+            radius,
+            sh_degree,
+            antialiased,
+            max_aniso=max_aniso,
+            seed=int(cfg["seed"]),
+            report=lambda f, m: stage.update(f, m),
+        )
+        return out, {"steps": steps, "time_s": round(time.perf_counter() - t0, 1)}
 
     def _evaluate(
         self,
@@ -165,10 +230,10 @@ class RefinementBase(Phase):
         renders_dir.mkdir()
         p_before = to_params(before.with_sh_degree(sh_degree))
         p_after = p_before if after is before else to_params(after.with_sh_degree(sh_degree))
-        lpips = Lpips() if cfg["lpips"] else None
+        lpips = Lpips(net=cfg["lpips_net"]) if cfg["lpips"] else None
         n_save = int(cfg["num_test_renders"])
         save = set(np.linspace(0, len(test) - 1, min(n_save, len(test))).round().astype(int))
-        stage = self.progress.stage(REFINE_END, 1.0, "vyhodnotenie")
+        stage = self.progress.stage(self._eval_start(), 1.0, "vyhodnotenie")
         per_view = []
         with torch.no_grad():
             for i, cam in enumerate(test):

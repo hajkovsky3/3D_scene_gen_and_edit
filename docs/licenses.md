@@ -21,7 +21,9 @@ Stav:
 | Pillow | 00 | MIT-CMU (HPND) | — | OK | |
 | NumPy | všetky | BSD-3 | — | OK | |
 | PyYAML | jadro | MIT | — | OK | |
-| COLMAP 4.x (+ GLOMAP, ALIKED, LightGlue) | 01 | BSD | — / ONNX modely | OVERIŤ váhy ALIKED/LightGlue | GLOMAP je od 4.0 súčasťou COLMAP |
+| COLMAP 4.x (+ GLOMAP, ALIKED, LightGlue) | 01 | BSD | — / ONNX modely | OVERIŤ váhy ALIKED | GLOMAP je od 4.0 súčasťou COLMAP; ONNX matchery wheel z PyPI nepoužívame, LightGlue beží cez kornia (riadok nižšie) |
+| LightGlue pre SIFT (`sift_lightglue.pth`, cvg/LightGlue v0.1_arxiv) | 01 (`matcher_backend: lightglue`) | Apache 2.0 | Apache 2.0 (README: „The pre-trained weights of LightGlue and the code … are released under the Apache-2.0 license“; výnimka SuperPoint, ten nepoužívame) | OK | 47,6 MB, stiahnuté so súhlasom autora 2026-10-27 do `checkpoints/lightglue`; citovať Lindenberger et al., ICCV 2023 |
+| kornia 0.9 (+ `kornia-rs`) | 01 (sieť LightGlue) | Apache 2.0 | — (váhy LightGlue načítame z `checkpoints/`, nesťahuje ich kornia) | OK | extra `lightglue` v `pyproject.toml` |
 | `pycolmap` 4.2 (wheel z PyPI) | 01 | BSD-3 | — | HRANIČNÉ (schválené) | wheel pribaľuje SuiteSparse: SPQR (GPL-2+), CHOLMOD (časti GPL-2+/LGPL-2.1+), ostatné BSD; ďalej Ceres (BSD), OpenImageIO (Apache 2.0), OpenBLAS (BSD). Autor schválil 2026-10-12 ako tranzitívnu binárnu závislosť externého nástroja: náš kód GPL kód neobsahuje ani nedistribuuje. Oficiálne binárky COLMAP majú to isté. |
 | VGGT (`VGGT-1B-Commercial`) | 01 alt | VGGT License | VGGT License, prístup cez formulár | HRANIČNÉ | pôvodný checkpoint `VGGT-1B` je nekomerčný |
 | gsplat 1.5 | 02, 03, 07, 12, 13 | Apache 2.0 | — | OK | CUDA jadro sa kompiluje lokálne (JIT); obsahuje GLM (MIT) |
@@ -31,6 +33,7 @@ Stav:
 | Depth Anything V2 **Small** (`depth-anything/Depth-Anything-V2-Small-hf`) | 02 (hĺbkový prior, `depth_reg`) | Apache 2.0 | Apache 2.0 (iba Small; Base/Large/Giant sú CC-BY-NC-4.0) | OK | 24,8 M parametrov, ~99 MB, stiahnuté so súhlasom autora 2026-10-18 do `checkpoints/huggingface`; citovať Yang et al. 2024 |
 | Hugging Face `transformers` 5.x (+ `huggingface_hub`, `safetensors`, `tokenizers`) | 02 (hĺbkový prior) | Apache 2.0 | — | OK | tranzitívne: `regex` (Apache 2.0), `hf-xet` (Apache 2.0), `httpx` (BSD-3), `tqdm` (MIT/MPL-2.0), `typer`, `click` (BSD/MIT); extra `depth` v `pyproject.toml` |
 | AlexNet (`torchvision`, `alexnet-owt-7be5be79.pth`) | 02 (LPIPS) | BSD-3 | BSD-3 (torchvision), trénované na ImageNet | OK | stiahnuté so súhlasom autora 2026-10-14, iba na meranie LPIPS; vypnuteľné `lpips: false` |
+| VGG16 (`torchvision`, `vgg16-397923af.pth`) | 02, 03 (LPIPS pri `lpips_net: vgg`) | BSD-3 | BSD-3 (torchvision), trénované na ImageNet | OK, zatiaľ nestiahnuté | ~528 MB, iba na porovnanie s článkom 3DGS; stiahne sa pri prvom použití, pred tým sa opýtať |
 | RAM++ | 04 | Apache 2.0 | OVERIŤ | OVERIŤ | |
 | Grounding DINO (Swin-T/B, open-source verzia) | 05 | Apache 2.0 | Apache 2.0 | OK | verzie 1.5/1.6 a DINO-X sú len API |
 | SAM 2 / 2.1 | 05 | Apache 2.0 | Apache 2.0 | OK | |

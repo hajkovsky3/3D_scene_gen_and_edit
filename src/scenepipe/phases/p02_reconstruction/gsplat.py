@@ -56,6 +56,7 @@ class ReconstructionGsplat(Phase):
         "antialiased": True,
         "export_depth": False,
         "lpips": True,
+        "lpips_net": "alex",
         "num_test_renders": 8,
         "seed": 0,
         "compile_ssim": True,
@@ -299,7 +300,7 @@ class ReconstructionGsplat(Phase):
         renders_dir.mkdir()
         if not test:
             return []
-        lpips = Lpips() if cfg["lpips"] else None
+        lpips = Lpips(net=cfg["lpips_net"]) if cfg["lpips"] else None
         n_save = int(cfg["num_test_renders"])
         save = set(np.linspace(0, len(test) - 1, min(n_save, len(test))).round().astype(int))
         per_view = []
@@ -364,7 +365,7 @@ class ReconstructionGsplat(Phase):
             "psnr": mean("psnr"),
             "ssim": mean("ssim"),
             "lpips": mean("lpips"),
-            "lpips_net": "alex" if self.config["lpips"] else None,
+            "lpips_net": self.config["lpips_net"] if self.config["lpips"] else None,
             "sh_degree": int(self.config["sh_degree"]),
             "strategy": self.config["strategy"],
             "test_frame_ids": [c.frame_id for c in test],

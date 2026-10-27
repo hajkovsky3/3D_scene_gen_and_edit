@@ -15,8 +15,9 @@ from scenepipe.phases.p01_sfm.align import (
     floor_plane,
     rotation_between,
 )
-from scenepipe.phases.p01_sfm.colmap import SfmColmap
+from scenepipe.phases.p01_sfm.colmap import REPO_ROOT, SfmColmap
 from scenepipe.phases.p01_sfm.retrieval import bow_similarity, select_pairs
+from scenepipe.phases.p01_sfm.torch_match import sift_lightglue_inputs
 
 W, H, F = 320, 240, 230.0
 
@@ -157,6 +158,44 @@ def test_unsupported_features(tmp_path):
     make_ingest(ws, orbit_cameras(3), source=None)
     with pytest.raises(NotImplementedError):
         SfmColmap(ws, {"features": "aliked"}).execute()
+
+
+def test_lightglue_backend_cpu(tmp_path):
+    """SIFT + LightGlue on the CPU (use_gpu: false), needs kornia and the local weights."""
+    pytest.importorskip("kornia")
+    if not (REPO_ROOT / SfmColmap.defaults["lightglue_weights"]).is_file():
+        pytest.skip("LightGlue weights not downloaded (phases/01_sfm.md)")
+    ws = Workspace.open(tmp_path, "room")
+    gt = orbit_cameras(15)
+    make_ingest(ws, gt, source="input/room.mp4")
+    cfg = {"max_num_features": 1024, "matcher": "sequential", "sequential_overlap": 3}
+    SfmColmap(ws, {**cfg, "matcher_backend": "lightglue", "use_gpu": False}).execute()
+    report = load(ws, "report.json")
+    assert report["match_device"] == "cpu"
+    assert load(ws, "manifest.json")["config"]["matcher_backend"] == "lightglue"
+    assert report["num_registered"] >= 14 and report["mean_reprojection_error_px"] < 1.0
+    for c in load(ws, "cameras.json")["cameras"]:
+        assert c["fx"] == pytest.approx(F, rel=0.03)
+
+
+def test_unknown_matcher_backend(tmp_path):
+    ws = Workspace.open(tmp_path, "room")
+    make_ingest(ws, orbit_cameras(3), source=None)
+    with pytest.raises(ValueError):
+        SfmColmap(ws, {"matcher_backend": "superglue"}).execute()
+
+
+def test_sift_lightglue_inputs():
+    # keypoint at pixel center (10.5, 20.5) in COLMAP, scale 3, rotated by 30 degrees
+    a = np.radians(30.0)
+    shape = 3.0 * np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+    kp = np.array([[10.5, 20.5, shape[0, 0], shape[0, 1], shape[1, 0], shape[1, 1]]])
+    desc = np.full((1, 128), 7, dtype=np.uint8)
+    f = sift_lightglue_inputs(kp, desc, 320, 240)
+    assert np.allclose(f["keypoints"], [[10.0, 20.0]])
+    assert np.allclose(f["scales"], [3.0]) and np.allclose(f["oris"], [a])
+    assert np.allclose(np.linalg.norm(f["descriptors"], axis=1), 1.0)
+    assert f["descriptors"].dtype == np.float32 and list(f["image_size"]) == [320, 240]
 
 
 # --- alignment math (no COLMAP) ---

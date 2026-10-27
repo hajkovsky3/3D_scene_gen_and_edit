@@ -43,7 +43,7 @@ apt-get install -y build-essential python3-venv python3-dev ninja-build cuda-too
 python3 -m venv ~/venvs/sp-gs && source ~/venvs/sp-gs/bin/activate
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 cd /mnt/c/Users/<user>/Documents/3D_scene_gen_and_edit
-pip install -e ".[dev,gs,depth,ingest,sfm]"   # sfm: 01 s párovaním na GPU, depth: hĺbkový prior v 02
+pip install -e ".[dev,gs,depth,ingest,sfm,lightglue]"   # sfm: 01 s párovaním na GPU, lightglue: SIFT + LightGlue v 01, depth: hĺbkový prior v 02
 
 # 3. pred každým použitím (gsplat JIT potrebuje nvcc)
 export CUDA_HOME=/usr/local/cuda-13.0 PATH=/usr/local/cuda-13.0/bin:$PATH

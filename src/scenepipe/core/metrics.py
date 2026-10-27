@@ -1,8 +1,8 @@
 """Image metrics shared by phases 02, 12 and 13 (torch; environment `sp-gs`).
 
 PSNR and SSIM follow the usual 3DGS evaluation (images in [0, 1], SSIM with an 11x11
-gaussian window, sigma 1.5). LPIPS uses torchmetrics with the AlexNet backbone, as gsplat
-and most 3DGS papers report it.
+gaussian window, sigma 1.5). LPIPS uses torchmetrics with the AlexNet backbone by default, as
+gsplat reports it; the original 3DGS paper reports LPIPS with VGG (`Lpips(net="vgg")`).
 """
 
 from __future__ import annotations
@@ -84,13 +84,19 @@ def _ssim_from_moments(mu_x, mu_y, exx, eyy, exy):
     return (num / den).mean()
 
 
-class Lpips:
-    """LPIPS (AlexNet). Downloads torchvision AlexNet weights on first use (~233 MB)."""
+LPIPS_NETS = ("alex", "vgg")
 
-    def __init__(self, device: str = "cuda"):
+
+class Lpips:
+    """LPIPS. Downloads the torchvision backbone weights on first use (AlexNet ~233 MB,
+    VGG16 ~528 MB)."""
+
+    def __init__(self, device: str = "cuda", net: str = "alex"):
         from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
-        self.model = LearnedPerceptualImagePatchSimilarity(net_type="alex", normalize=True)
+        if net not in LPIPS_NETS:
+            raise ValueError(f"unknown LPIPS net {net!r}, expected one of {LPIPS_NETS}")
+        self.model = LearnedPerceptualImagePatchSimilarity(net_type=net, normalize=True)
         self.model = self.model.to(device).eval()
 
     def __call__(self, img: torch.Tensor, ref: torch.Tensor) -> torch.Tensor:

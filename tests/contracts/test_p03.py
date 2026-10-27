@@ -109,6 +109,7 @@ def test_prune_outputs_format(scene):
     assert report["num_train_views"] == N_VIEWS - len(TEST_IDS)
     assert report["per_view"] == [] and report["before"]["psnr"] is None
     assert set(report["crop_box"]) == {"center", "axes", "lo", "hi"}
+    assert report["finetune"] is None
 
     manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["phase"] == "03_refinement" and manifest["impl"] == "prune"
@@ -137,6 +138,16 @@ def test_isolated_counted_after_other_criteria(scene):
     assert report["removed"]["crop"] == N_FLOATERS
     assert report["removed"]["opacity"] == N_TRANSPARENT
     assert report["removed"]["isolated"] > 0
+
+
+def test_isolated_keep_extent(scene):
+    base = {"eval": False, "min_views": 0, "crop": False}
+    report, _ = run(scene, RefinementPrune, base)
+    # the huge gaussians (3 sigma = 30 m) are far from everything else only by their centers
+    kept, _ = run(scene, RefinementPrune, base | {"isolated_keep_extent": 5})
+    assert kept["removed"]["isolated"] < report["removed"]["isolated"]
+    off, _ = run(scene, RefinementPrune, base | {"isolated_keep_extent": 1e-9})  # all large
+    assert off["removed"]["isolated"] == 0
 
 
 def test_isolated_mask():
@@ -179,6 +190,29 @@ def test_clamp_needles_keeps_axis_order():
     out = np.exp(clamp_needles(log_s, 5.0))
     np.testing.assert_allclose(out[0], [0.01, 0.1, 0.02], rtol=1e-5)
     assert needle_mask(np.exp(log_s), 5.0).tolist() == [True, False]
+
+
+def test_limit_needles():
+    torch = pytest.importorskip("torch")
+    from scenepipe.phases.p03_refinement.finetune import limit_needles
+
+    log_s = torch.log(torch.tensor([[0.01, 0.5, 0.02], [0.1, 0.1, 0.1], [0.3, 0.1, 0.05]]))
+    limit_needles(log_s, 5.0)
+    np.testing.assert_allclose(log_s.exp().numpy(), [[0.01, 0.1, 0.02], [0.1, 0.1, 0.1],
+                                                     [0.3, 0.1, 0.05]], rtol=1e-5)  # fmt: skip
+
+
+def test_finetune(scene):
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("gsplat")
+    if not torch.cuda.is_available():
+        pytest.skip("fine-tuning needs a CUDA GPU")
+    cfg = {"lpips": False, "num_test_renders": 1, "max_aniso": 10, "min_views": 0}
+    report, g = run(scene, RefinementPrune, cfg | {"finetune_steps": 30})
+    assert report["finetune"]["steps"] == 30 and report["finetune"]["time_s"] >= 0
+    assert report["num_output"] == len(g) == report["num_input"] - sum(report["removed"].values())
+    assert not needle_mask(np.exp(g.scales), 10 * 1.001).any()
+    assert np.isfinite(report["after"]["psnr"])
 
 
 def test_eval_before_after(scene):

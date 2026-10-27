@@ -34,7 +34,8 @@ pretože vzťahy v grafe scény (napr. *on*) potrebujú vedieť, kde je hore.
 
 ## Postup
 
-1. **Features**: SIFT (GPU) alebo ALIKED. Pre ťažšie scény ALIKED + LightGlue.
+1. **Features**: SIFT (CPU). ALIKED zatiaľ nie (váhy neschválené). Pre ťažšie scény
+   SIFT + LightGlue (párovanie, pozri krok 2).
    Kamera: ak `single_camera: true` a všetky snímky majú rovnaký rozmer aj `exif_focal_35mm`,
    jedna spoločná kamera (model `SIMPLE_RADIAL`), inak COLMAP `AUTO`. Ak `frames.json` obsahuje `exif_focal_35mm`,
    použije sa ako počiatočný odhad ohniska: `f_px = f35 * diag_px / 43.27`
@@ -69,6 +70,20 @@ pretože vzťahy v grafe scény (napr. *on*) potrebujú vedieť, kde je hore.
    nie v `01_sfm/_work/`: databáza sa zapisuje a číta pri každej dvojici a vo WSL je
    `/mnt/c` cez 9p rádovo pomalší (verifikácia stála na I/O).
 
+   **SIFT + LightGlue** (`matcher_backend: lightglue`): namiesto najbližších susedov páruje
+   dvojice naučená sieť LightGlue (Lindenberger et al., ICCV 2023) s váhami pre SIFT
+   (`sift_lightglue.pth` z cvg/LightGlue, Apache 2.0), sieť z knižnice kornia (Apache 2.0),
+   v PyTorch (GPU, ak `use_gpu` a CUDA, inak CPU). Vstupy sa pripravia ako v COLMAP matcheri
+   `SIFT_LIGHTGLUE` (`src/colmap/feature/lightglue.cc`): body posunuté o −0,5 px, uložené
+   RootSIFT deskriptory L2-normalizované, mierka a orientácia (radiány) z afinného tvaru bodu.
+   Zhody so skóre < `lightglue_min_score` (0,1 ako v COLMAPe) sa zahodia, geometrická
+   verifikácia ostáva v COLMAPe. Dvojice idú po jednej (LightGlue preriedi body v každej
+   dvojici inak). Na CPU ~10 s na dvojicu pri 4 096 bodoch, prakticky len na GPU.
+   Váhy sa počas behu nesťahujú, musia byť v `lightglue_weights`:
+   `curl -L -o checkpoints/lightglue/sift_lightglue.pth
+   https://github.com/cvg/LightGlue/releases/download/v0.1_arxiv/sift_lightglue.pth`
+   (47,6 MB, SHA-256 `5b52b8d9…4ac0`). Inštalácia: extra `lightglue` (`pip install -e ".[lightglue]"`).
+
    `sift_max_image_size` zmenší obrázok pred extrakciou SIFT (rýchlejšia extrakcia aj párovanie,
    výstupné snímky a kamery sú v pôvodnom rozlíšení).
 3. **Geometrická verifikácia**: odhad fundamentálnej / esenciálnej matice s RANSAC.
@@ -101,7 +116,7 @@ pretože vzťahy v grafe scény (napr. *on*) potrebujú vedieť, kde je hore.
 
 | Názov | Popis | Licencia |
 |---|---|---|
-| `colmap` (primárna) | COLMAP 4.x cez `pycolmap` (wheel z PyPI, iba CPU) + voliteľne párovanie v PyTorch na GPU; zatiaľ SIFT, sequential/exhaustive, global/incremental mapper | BSD; wheel pribaľuje SuiteSparse (časti GPL/LGPL) — HRANIČNÉ, pozri `docs/licenses.md` |
+| `colmap` (primárna) | COLMAP 4.x cez `pycolmap` (wheel z PyPI, iba CPU) + voliteľne párovanie v PyTorch na GPU (najbližší susedia alebo LightGlue); SIFT, sequential/exhaustive/retrieval, global/incremental mapper | BSD; wheel pribaľuje SuiteSparse (časti GPL/LGPL) — HRANIČNÉ, pozri `docs/licenses.md` |
 | `vggt` (alternatíva) | feed-forward VGGT, export do COLMAP formátu, voliteľný BA; vhodné pri málo snímkach | VGGT License; **iba checkpoint `VGGT-1B-Commercial`** (pôvodný je nekomerčný) — hraničné, pozri `docs/licenses.md` |
 
 Iba ako **nekomerčné** alternatívy (nie primárna cesta, pozri `docs/licenses.md`):
@@ -116,6 +131,8 @@ sfm:
   features: sift            # sift | aliked
   matcher: auto             # auto | sequential | exhaustive | retrieval | vocab_tree
   matcher_backend: default  # default | lightglue
+  lightglue_weights: checkpoints/lightglue/sift_lightglue.pth  # relatívne ku koreňu repozitára
+  lightglue_min_score: 0.1  # zahodiť zhody LightGlue s nižším skóre
   mapper: global            # global | incremental
   fallback_incremental_below: 0.8
   single_camera: true       # true pre video z jedného telefónu
@@ -133,8 +150,9 @@ sfm:
   keep_work: false
 ```
 
-`aliked`, `lightglue` a `vocab_tree` potrebujú stiahnuť váhy alebo vocabulary tree.
-Kým ich autor neschváli, implementácia pri nich skončí chybou.
+`aliked` a `vocab_tree` potrebujú stiahnuť váhy alebo vocabulary tree. Kým ich autor
+neschváli, implementácia pri nich skončí chybou. `lightglue` je schválený (2026-10-27),
+váhy treba stiahnuť ručne (príkaz v kroku 2).
 
 ## Hardvér
 
@@ -212,7 +230,25 @@ test: `tests/contracts/test_p01.py` (syntetická miestnosť so známymi kamerami
   inak (aj exhaustive s 8 192 bodmi, 23 min), globálny mapper je tam nejednoznačný; zhoda póz
   medzi behmi preto na *izbe* nie je meradlo kvality. Vo WSL je extrakcia SIFT ~1,5× pomalšia
   než natívne na Windowse (61 vs. 40 s pri `fast`).
-- [ ] ALIKED / LightGlue / vocab tree (čaká na schválenie stiahnutia váh)
+- [x] SIFT + LightGlue (`matcher_backend: lightglue`, 2026-10-27): kontraktový test na CPU
+  (15 syntetických snímok, `sequential`, všetky zaregistrované, ~1 min). Porovnanie na CPU na
+  dvojiciach *m360_room* (4 096 bodov, 1 024 px, zhody pred / po geometrickej verifikácii):
+
+  | Dvojica (odstup snímok) | Najbližší susedia | LightGlue |
+  |---|---|---|
+  | 1 | 2 017 / 1 681 | 2 239 / 1 840 |
+  | 4 | 755 / 735 | 1 414 / 1 403 |
+  | 10 | 194 / 166 | 855 / 823 |
+  | 15 | 67 / 57 | 512 / 481 |
+  | 20, 30, 40 | ≤ 19 / 0 | ≤ 26 / 0 |
+
+  Pri väčšom odstupe nájde LightGlue 2–8× viac overených zhôd, pri malom prekryve (20+) ani
+  jeden nič. Orientácia bodu pomáha málo: s nulovou orientáciou o ~5 % viac zhôd, s opačným
+  znamienkom rovnako; ponechaná konvencia COLMAPu. Dvojnásobná mierka (konvencia OpenCV)
+  ~6 % zhôd stratí.
+- [ ] LightGlue na GPU: čas a presnosť póz na Mip-NeRF 360 (`sfm_poses`) a *izbe*, potom
+  rozhodnúť o `matcher_backend` v `default.yaml` (čaká na súhlas s použitím GPU)
+- [ ] ALIKED / vocab tree (čaká na schválenie stiahnutia váh)
 - [ ] (voliteľné) implementácia `vggt`
 
 ## Zdroje

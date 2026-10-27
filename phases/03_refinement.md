@@ -1,6 +1,6 @@
 # Fáza 03: Refinement (vyčistenie gaussiánov)
 
-`contract_version: 2`
+`contract_version: 3`
 
 ## Účel
 
@@ -31,11 +31,13 @@ s hotovými gaussiánmi.
 
 **Výstup** (`03_refinement/`)
 - `gaussians.ply` — formát podľa `docs/data-contracts.md`, sekcia 5, v tých istých svetových
-  súradniciach ako vstup. Poradie ponechaných gaussiánov sa zachová.
+  súradniciach ako vstup. Poradie ponechaných gaussiánov sa zachová. Pri dotréningu
+  (`finetune_steps > 0`) sa ich parametre zmenia, počet a poradie nie.
 - `report.json` — `num_input`, `num_output`, `removed` (počet odstránených podľa kritéria:
   `crop`, `opacity`, `views`, `scale`, `isolated`, `aniso`; jeden gaussián sa započíta pri prvom kritériu, ktoré ho
   vyradí, v tomto poradí), `clamped` (počet skrátených ihiel), `crop_box` (`center`, `axes`,
-  `lo`, `hi`, pozri Postup; `null` pri `crop: false`), `scene_radius`, `num_train_views`,
+  `lo`, `hi`, pozri Postup; `null` pri `crop: false`), od verzie 3 `finetune` (`steps`,
+  `time_s`; `null` bez dotréningu), `scene_radius`, `num_train_views`,
   `before` a `after` (`psnr`, `ssim`, `lpips` priemer cez testovacie pohľady alebo `null`),
   `per_view` (`frame_id`, `before`, `after` pre každý testovací pohľad), `test_frame_ids`,
   `eval_resolution`, `sh_degree`, `antialiased`, `lpips_net`, `warnings`.
@@ -69,9 +71,20 @@ Fázy 07 a 08 čítajú gaussiány odtiaľto, nie z `02_reconstruction/`.
      voxeli a 26 susedných. Ak je ich menej než `isolated_min_count` (vrátane neho), odstráni sa.
      Počíta sa iba medzi gaussiánmi, ktoré prežili predchádzajúce kritériá, takže zhluk zložený
      z priehľadného oparu alebo ležiaci mimo kvádra nepodrží osamotený gaussián pri živote.
+     Izolovanosť sa určuje zo stredov, takže za izolované považuje aj veľké gaussiány, ktoré
+     pokrývajú riedke oblasti (výhľad z okna). `isolated_keep_extent > 0` ich ponechá:
+     izolovaný gaussián sa odstráni, iba ak 3σ najdlhšej osi ≤ `isolated_keep_extent` voxelov.
 5. **Ihly**: ak `max_aniso > 0` a pomer najdlhšej a strednej osi prekročí limit, najdlhšia os sa
    skráti na `max_aniso × stredná os` (`aniso_action: clamp`), alebo sa gaussián odstráni (`remove`).
-6. **Metriky**: render testovacích pohľadov pred a po (gsplat, rovnaké rozlíšenie ako v reporte 02).
+6. **Dotréning** (`finetune_steps > 0`, potrebuje CUDA): krátky tréning orezaných gaussiánov na
+   tréningových pohľadoch z 02 (testovacie ostávajú bokom), aby susedné gaussiány zaplnili
+   miesta po odstránených a po skrátených ihlách. Loss ako v 02 (0,8 · L1 + 0,2 · (1 − SSIM)),
+   rozlíšenie `eval_resolution` z reportu 02, Adam s rýchlosťami učenia z konca tréningu v 02
+   (pozícia 1,6e-6 × polomer scény, ostatné rovnako ako v 02). Bez densifikácie: počet
+   a poradie gaussiánov sa nemenia. Pri `max_aniso > 0` a `aniso_action: clamp` sa po každom
+   kroku najdlhšia os znova obmedzí na `max_aniso × stredná os`. Implementácia
+   `phases/p03_refinement/finetune.py`.
+7. **Metriky**: render testovacích pohľadov pred a po (gsplat, rovnaké rozlíšenie ako v reporte 02).
 
 Implementácia `none` skopíruje `gaussians.ply` bez zmeny a zapíše report s `removed` = 0.
 
@@ -83,7 +96,6 @@ Implementácia `none` skopíruje `gaussians.ply` bez zmeny a zapíše report s `
 | `none` | bez zmeny, na porovnanie „pred a po“ | — |
 
 Možné rozšírenia (zatiaľ nenavrhnuté):
-- krátky dotréning po orezaní (gaussiány okolo odstránených floaterov sa doladia),
 - generatívne doplnenie miest, ktoré nevidela žiadna kamera. Takéto metódy majú zväčša
   nekomerčné licencie, smú byť iba alternatívou v samostatnom prostredí (pozri Licenčné pravidlo).
 
@@ -100,10 +112,14 @@ refinement:
   max_scale_frac: 0        # napr. 0.5; 0 = vypnuté
   isolated_voxel: 0.02     # hrana voxelu ako podiel polomeru scény
   isolated_min_count: 4    # najmenší počet gaussiánov v okolí 3×3×3 voxelov; 0 = vypnuté
+  isolated_keep_extent: 0  # ponechať izolované s 3σ > toľko voxelov (napr. 5); 0 = vypnuté
   max_aniso: 0             # napr. 10; 0 = vypnuté
   aniso_action: clamp      # clamp | remove
+  finetune_steps: 0        # dotréning po orezaní (napr. 1000); 0 = vypnuté, inak treba CUDA
+  seed: 0                  # poradie pohľadov pri dotréningu
   eval: true               # metriky pred a po
   lpips: true
+  lpips_net: alex          # alex | vgg
   num_test_renders: 8
 ```
 
@@ -115,8 +131,10 @@ je dôležitejšia čistá geometria než odlesky a výhľad z okna, pozri Rizik
 ## Hardvér
 
 Orezanie beží na CPU (NumPy), pre 1 M gaussiánov a ~300 kamier rádovo sekundy až desiatky sekúnd.
-Metriky pred a po potrebujú CUDA GPU (render cez gsplat, ~1 GB VRAM). Prostredie `sp-gs`.
-S `eval: false` fáza GPU nepotrebuje.
+Metriky pred a po a dotréning potrebujú CUDA GPU (render cez gsplat, ~1 GB VRAM na metriky,
+dotréning približne ako tréning v 02 bez densifikácie). Prostredie `sp-gs`.
+S `eval: false` a `finetune_steps: 0` fáza GPU nepotrebuje. Dotréning drží všetky tréningové
+snímky v RAM (uint8, pri 272 snímkach 1556×1037 ~1,3 GB, ako 02).
 
 ## Validácia výstupu
 
@@ -148,6 +166,9 @@ S `eval: false` fáza GPU nepotrebuje.
   odstránenie 41 takých gaussiánov stálo jeden pohľad −6,4 dB (diera v stene).
 - Príliš prísne `min_opacity` odstráni aj jemné detaily (vlasy, tenké predmety, okraje).
 - Skrátenie ihiel zmení vzhľad v tréningových pohľadoch; bez dotréningu môžu vzniknúť diery.
+- Dotréning optimalizuje iba tréningové pohľady: môže čiastočne vrátiť artefakty, ktoré
+  v nich nevadia (napr. zvýšiť opacity zvyšného oparu). Bez densifikácie však nevzniknú nové
+  gaussiány a orezané floatery sa nevrátia.
 - Rendery z externých viewerov (SuperSplat) nepoužívajú kompenzáciu `antialiased` z gsplat,
   takže malé gaussiány v nich vyzerajú sýtejšie než v našom renderi.
 
@@ -192,9 +213,26 @@ a confidence s fázou 03 a bez nej (`impl: none`).
   Zvnútra je okno čierne a chýbajú odlesky v podlahe (prijatý kompromis, pozri Riziká).
   Izolovanosť sa počíta zo stredov: 934 z 1 680 izolovaných gaussiánov je veľkých (3σ > 5 voxelov,
   opacity ~0,4), sú to riedke oblasti ako výhľad z okna; drobných smietok (≤ 1 voxel) je ~70.
-  Variant, ktorý by veľké gaussiány nepovažoval za izolované, zatiaľ nie je.
-- [ ] overenie na scéne z telefónu (*izba*), kde floaterov mimo kamier je viac
-- [ ] dotréning po orezaní (umožnil by zapnúť skracovanie ihiel bez dier)
+- [x] voľba `isolated_keep_extent` (2026-10-27, `impl_version` 3): veľké izolované gaussiány
+  sa neodstránia. Počty na výstupoch 02 (`fast`) po ostatných kritériách (opacity, viditeľnosť),
+  odstránené ako izolované pri rôznych hodnotách (CPU, bez renderu):
+
+  | Scéna | `crop` | Izolované (0 = vypnuté) | ≤ 1 voxel | ≤ 2 | ≤ 5 | ≤ 10 |
+  |---|---|---|---|---|---|---|
+  | *m360_room* | áno | 893 | 56 | 141 | 453 | 719 |
+  | *m360_room* | nie | 1 680 | 69 | 198 | 746 | 1 246 |
+  | *m360_kitchen* | áno | 36 | 2 | 8 | 19 | 32 |
+  | *m360_kitchen* | nie | 2 163 | 39 | 281 | 901 | 1 432 |
+
+  Default ostáva 0 (správanie ako doteraz). Či hodnota 5 vráti výhľad z okna bez návratu
+  škvŕn, treba porovnať renderom a v SuperSplate (čaká na GPU).
+- [x] dotréning po orezaní (`finetune_steps`, 2026-10-27, `contract_version` 3): implementácia
+  a test na CPU (obmedzenie ihiel); kontraktový test dotréningu (`test_finetune`) potrebuje CUDA
+  a zatiaľ nebežal
+- [ ] dotréning na *m360_room*: PSNR pred a po pri 500 / 1000 / 2000 krokoch, so skracovaním
+  ihiel (`max_aniso` 10) a bez neho; potom rozhodnúť o defaulte (čaká na súhlas s GPU)
+- [ ] overenie na scéne z telefónu (*izba*), kde floaterov mimo kamier je viac (video *izby*
+  nie je na disku, čaká na dáta)
 
 Predbežné merania (2026-10-18, výstupy 02 z profilu `fast`, 7k krokov, 500k gaussiánov):
 - *izba2*: 37 % gaussiánov má opacity < 0,02 a 58 % < 0,05; 1,7 % nevidí žiadna tréningová

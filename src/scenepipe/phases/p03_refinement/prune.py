@@ -14,7 +14,7 @@ import numpy as np
 from scenepipe.core.cameras import Camera
 from scenepipe.core.gaussians import Gaussians
 from scenepipe.core.phase import register
-from scenepipe.phases.p03_refinement.common import CRITERIA, REFINE_END, RefinementBase
+from scenepipe.phases.p03_refinement.common import CRITERIA, RefinementBase
 
 MAX_VOXEL_OFFSET = 2**19  # voxels from the median; 3 axes x 20 bits fit in an int64 code
 
@@ -22,7 +22,7 @@ MAX_VOXEL_OFFSET = 2**19  # voxels from the median; 3 axes x 20 bits fit in an i
 @register
 class RefinementPrune(RefinementBase):
     impl = "prune"
-    impl_version = "2"
+    impl_version = "3"
 
     def refine_steps(self) -> list[str]:
         return [*(["viditeľnosť"] if int(self.config["min_views"]) > 0 else []), "orezanie"]
@@ -35,7 +35,7 @@ class RefinementPrune(RefinementBase):
         max_scale_frac, max_aniso = float(cfg["max_scale_frac"]), float(cfg["max_aniso"])
         if cfg["aniso_action"] not in ("clamp", "remove"):
             raise ValueError(f"unknown aniso_action {cfg['aniso_action']!r}")
-        end = REFINE_END if cfg["eval"] else 1.0
+        end = self.refine_end()
         n = len(g)
         none = np.zeros(n, bool)
         extra: dict[str, Any] = {}
@@ -68,7 +68,11 @@ class RefinementPrune(RefinementBase):
             # among the survivors only: a cluster of haze or of cropped gaussians keeps nothing alive
             alive = ~(masks["crop"] | masks["opacity"] | masks["views"] | masks["scale"])
             voxel = float(cfg["isolated_voxel"]) * radius
-            masks["isolated"][alive] = isolated_mask(g.means[alive], voxel, min_count)
+            iso = isolated_mask(g.means[alive], voxel, min_count)
+            if keep := float(cfg["isolated_keep_extent"]):
+                # large gaussians (3 sigma > keep voxels) cover sparse regions, not specks
+                iso &= 3 * scales[alive].max(1) <= keep * voxel
+            masks["isolated"][alive] = iso
         removed, gone = {}, np.zeros(n, bool)
         for key in CRITERIA:  # a gaussian counts for the first criterion that removes it
             removed[key] = int((masks[key] & ~gone).sum())

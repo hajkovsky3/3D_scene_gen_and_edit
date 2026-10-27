@@ -1,5 +1,8 @@
 """SIFT descriptor matching on the GPU with PyTorch (optional, `use_gpu: true`).
 
+Two matchers: nearest neighbours with COLMAP's rules (`match_pairs`, below) and LightGlue
+(`match_pairs_lightglue`, at the end of the file).
+
 Reproduces COLMAP's SIFT brute-force matcher rules (SiftMatchingOptions): descriptors are
 compared by the angle between the L2-normalized vectors, a match needs angle <= max_distance
 and angle < max_ratio * second best angle, and with cross_check it has to be the mutual best
@@ -140,3 +143,94 @@ def _passes(best, second, max_ratio: float, max_distance: float):
     d1 = torch.arccos(best.clamp(-1.0, 1.0))
     d2 = torch.arccos(second.clamp(-1.0, 1.0))
     return (d1 <= max_distance) & (d1 < max_ratio * d2)
+
+
+# --- SIFT + LightGlue (`matcher_backend: lightglue`) ---
+#
+# LightGlue (Lindenberger et al., ICCV 2023) with the SIFT weights of cvg/LightGlue (Apache 2.0),
+# network from kornia (Apache 2.0). Inputs are prepared as COLMAP's own SIFT_LIGHTGLUE matcher
+# does (src/colmap/feature/lightglue.cc): keypoints shifted from COLMAP's pixel-corner origin
+# by -0.5, the stored uint8 RootSIFT descriptors L2-normalized, scale and orientation (radians)
+# from the keypoint's affine shape. Matches with a score below `min_score` are dropped.
+
+LIGHTGLUE_SIFT_CONF = {"input_dim": 128, "add_scale_ori": True}
+CACHE_IMAGES = 64  # images whose tensors are kept on the device
+
+
+def load_lightglue(weights: str, device: str = "cuda"):
+    """LightGlue for SIFT from a local `sift_lightglue.pth` (no download at run time)."""
+    import torch
+    from kornia.feature import LightGlue
+
+    model = LightGlue(None, **LIGHTGLUE_SIFT_CONF)
+    state = torch.load(weights, map_location="cpu", weights_only=True)
+    for i in range(model.conf.n_layers):  # old checkpoint layout, renamed like kornia does
+        for old, new in ((f"self_attn.{i}", f"transformers.{i}.self_attn"),
+                         (f"cross_attn.{i}", f"transformers.{i}.cross_attn")):  # fmt: skip
+            state = {k.replace(old, new): v for k, v in state.items()}
+    missing = model.load_state_dict(state, strict=False).missing_keys
+    params = dict(model.named_parameters())
+    if any(name in params for name in missing):
+        raise RuntimeError(f"{weights}: LightGlue weights incomplete, missing {missing}")
+    return model.eval().to(torch.device(device))
+
+
+def sift_lightglue_inputs(keypoints: np.ndarray, descriptors: np.ndarray, width: int, height: int):
+    """COLMAP keypoints [N, 6] (x, y, a11, a12, a21, a22) + uint8 descriptors -> LightGlue dict.
+
+    Arrays stay on the CPU (numpy); `match_pairs_lightglue` moves them to the device.
+    """
+    kp = np.asarray(keypoints, dtype=np.float32).reshape(-1, 6)
+    a11, a12, a21, a22 = kp[:, 2], kp[:, 3], kp[:, 4], kp[:, 5]
+    desc = np.asarray(descriptors, dtype=np.float32)
+    desc /= np.maximum(np.linalg.norm(desc, axis=1, keepdims=True), 1e-12)
+    return {
+        "keypoints": kp[:, :2] - 0.5,
+        "scales": (np.hypot(a11, a21) + np.hypot(a12, a22)) / 2,
+        "oris": np.arctan2(a21, a11),
+        "descriptors": desc,
+        "image_size": np.array([width, height], dtype=np.float32),
+    }
+
+
+def match_pairs_lightglue(
+    features: list[dict],
+    pairs: list[tuple[int, int]],
+    model,
+    min_score: float = 0.1,
+    on_progress: Callable[[int], None] | None = None,
+    progress_every: int = 20,
+) -> Iterator[tuple[int, int, np.ndarray]]:
+    """Yield (i, j, matches uint32[M, 2]) for every pair; `features` from `sift_lightglue_inputs`.
+
+    Pairs run one at a time (LightGlue's point pruning keeps a different number of points per
+    pair, so batching would not help). Tensors of an image are moved to the device once.
+    """
+    import torch
+
+    dev = next(model.parameters()).device
+    cache: dict[int, dict] = {}
+
+    def tensors(i: int) -> dict:
+        if i not in cache:
+            if len(cache) >= CACHE_IMAGES:  # pairs are sorted, so the anchor is reloaded rarely
+                cache.clear()
+            cache[i] = {k: torch.from_numpy(v).to(dev)[None] for k, v in features[i].items()}
+        return cache[i]
+
+    done = 0
+    with torch.inference_mode():
+        for i, j in sorted(pairs):
+            a, b = tensors(i), tensors(j)
+            if a["keypoints"].shape[1] < 1 or b["keypoints"].shape[1] < 1:
+                m = np.zeros((0, 2), np.uint32)
+            else:
+                out = model({"image0": a, "image1": b})
+                m0 = out["matches0"][0]
+                ok = (m0 >= 0) & (out["matching_scores0"][0] >= min_score)
+                rows = torch.nonzero(ok)[:, 0]
+                m = torch.stack([rows, m0[rows]], 1).cpu().numpy().astype(np.uint32)
+            yield i, j, m
+            done += 1
+            if on_progress is not None and (done % progress_every == 0 or done == len(pairs)):
+                on_progress(done)

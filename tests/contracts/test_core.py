@@ -54,6 +54,24 @@ def test_ply_layout(tmp_path):
     assert np.array_equal(data[:, 58:62], g.quats)
 
 
+def test_ply_header_matches_3dgs(tmp_path):
+    """SuperSplat and other 3DGS viewers read the PLY layout of the original 3DGS code (INRIA,
+    written with plyfile): byte-identical header, no other elements, float32 little-endian."""
+    names = ["x", "y", "z", "nx", "ny", "nz", "f_dc_0", "f_dc_1", "f_dc_2"]
+    names += [f"f_rest_{i}" for i in range(45)] + ["opacity", "scale_0", "scale_1", "scale_2"]
+    names += ["rot_0", "rot_1", "rot_2", "rot_3"]
+    lines = ["ply", "format binary_little_endian 1.0", "element vertex 7"]
+    lines += [f"property float {n}" for n in names] + ["end_header"]
+    expected = "".join(line + "\n" for line in lines)
+    path = tmp_path / "g.ply"
+    write_ply(path, random_gaussians(7, 1))
+    raw = path.read_bytes()
+    assert raw[: len(expected)] == expected.encode("ascii")
+    assert len(raw) == len(expected) + 7 * 62 * 4
+    normals = np.frombuffer(raw[len(expected) :], "<f4").reshape(7, 62)[:, 3:6]
+    assert not normals.any()  # 3DGS writes zero normals
+
+
 def test_ply_rejects_other_layout(tmp_path):
     path = tmp_path / "bad.ply"
     path.write_bytes(

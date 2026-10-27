@@ -18,6 +18,8 @@ sfm = ["pycolmap>=4.2,<4.3", "pillow"]
 gs = ["torch", "torchvision", "gsplat>=1.5,<1.6", "torchmetrics", "pillow"]
 # monocular depth prior of phase 02 (depth_reg > 0), Depth Anything V2 Small via transformers
 depth = ["transformers>=4.45"]
+# SIFT + LightGlue matching of phase 01 (matcher_backend: lightglue), needs torch
+lightglue = ["kornia>=0.8,<0.10"]
 monitor = ["customtkinter>=5.2,<5.3"]
 
 [tool.setuptools.packages.find]

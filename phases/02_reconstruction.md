@@ -95,7 +95,8 @@ reconstruction:
   test_every: 8
   antialiased: true
   export_depth: false
-  lpips: true              # LPIPS(alex) v reporte; stiahne váhy AlexNet z torchvision (~233 MB)
+  lpips: true              # LPIPS v reporte; stiahne váhy siete z torchvision
+  lpips_net: alex          # alex (~233 MB, ako gsplat) | vgg (~528 MB, ako článok 3DGS)
   num_test_renders: 8      # koľko testovacích renderov uložiť do test_renders/
   seed: 0
   compile_ssim: true       # SSIM v loss cez torch.compile (rovnaká hodnota, ~4× rýchlejšie)
@@ -195,7 +196,9 @@ Porovnanie na Mip-NeRF 360 scénach (room, counter, kitchen) s publikovanými č
   Rovnaká konfigurácia na *izbe* dala raz PSNR 22,83 a raz 23,26: tréning na GPU nie je
   deterministický a rozdiely do ~0,4 dB sú šum. Spolu −45 % času na *izbe*, −20 % na counter
   (menšie snímky, menší podiel ceny za pixel) bez merateľnej straty kvality.
-- [ ] overenie na *counter* a *kitchen* s plným tréningom (30k), porovnanie s 3DGS s LPIPS(vgg)
+- [ ] overenie na *counter* a *kitchen* s plným tréningom (30k), porovnanie s 3DGS s LPIPS(vgg).
+  Pripravené: voľba `lpips_net: vgg` (2026-10-27), 00 pre *counter* (240 snímok, CPU). Čaká na
+  súhlas s GPU (01 counter ~7 min, 2 × tréning ~2 h) a so stiahnutím váh VGG16 (~528 MB)
 - [x] regularizácia ihiel `aniso_reg` (2026-10-18, *m360_room*, `fast`: 7k krokov, 500k gaussiánov;
   ihla = pomer najdlhšej a strednej osi > 10, viditeľná = navyše opacity > 0,3):
 
@@ -230,8 +233,18 @@ Porovnanie na Mip-NeRF 360 scénach (room, counter, kitchen) s publikovanými č
   ostáva vo všetkých variantoch (pohľad z miesta, kde nebola žiadna fotka). Časy nie sú presne
   porovnateľné (zdieľaná GPU). Autor pri prezeraní celých scén vo vieweri vybral 0,2 ako
   najlepšie vyzerajúcu; za cenu −0,4 dB PSNR na testovacích pohľadoch.
-- [ ] metrika kvality z nových uhlov (bez referencie), aby sa prior dal ladiť číslom, nie okom
-- [ ] test kompatibility PLY so SuperSplat
+- [x] metrika kvality z nových uhlov bez referencie (2026-10-27, `python -m scenepipe.eval.novel_views
+  --scene X [--gaussians 03_refinement]`): testovacie pohľady posunuté nahor (+Z) a dozadu
+  (predvolene 0 / 0,3 / 0,6 jednotky), skóre `hole_frac` (podiel pixelov s alpha < 0,5)
+  a `depth_inconsistency` (1 − korelácia vyrenderovanej inverznej hĺbky s Depth Anything V2
+  Small na vyrenderovanom obraze, alpha > 0,5). Posun nulou dáva porovnávaciu hodnotu.
+  Pozor: `depth_reg` trénuje tú istú koreláciu na tréningových pohľadoch, skóre preto nie je
+  od prioru nezávislé, `hole_frac` áno. Testy na CPU (posun kamery, skóre), na GPU zatiaľ nebežal
+- [ ] `novel_views` na *m360_room* pre `depth_reg` 0 / 0,05 / 0,2 a porovnať s vizuálnym
+  hodnotením z 2026-10-18 (čaká na súhlas s GPU)
+- [x] kompatibilita PLY so SuperSplat: hlavička je bajt po bajte zhodná s formátom pôvodnej
+  implementácie 3DGS (test `test_ply_header_matches_3dgs` v `tests/contracts/test_core.py`);
+  výstupy 02 a 03 z *m360_room* autor otvoril v SuperSplate 2026-10-26 bez problémov
 
 ## Zdroje
 
