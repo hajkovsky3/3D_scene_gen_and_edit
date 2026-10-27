@@ -50,7 +50,7 @@ class RefinementBase(Phase):
         "isolated_keep_extent": 0,
         "max_aniso": 0,
         "aniso_action": "clamp",
-        "finetune_steps": 0,
+        "finetune_steps": 2000,
         "seed": 0,
         "eval": True,
         "lpips": True,

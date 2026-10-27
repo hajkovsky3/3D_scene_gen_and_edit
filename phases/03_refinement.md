@@ -115,7 +115,7 @@ refinement:
   isolated_keep_extent: 0  # ponechať izolované s 3σ > toľko voxelov (napr. 5); 0 = vypnuté
   max_aniso: 0             # napr. 10; 0 = vypnuté
   aniso_action: clamp      # clamp | remove
-  finetune_steps: 0        # dotréning po orezaní (napr. 1000); 0 = vypnuté, inak treba CUDA
+  finetune_steps: 2000     # dotréning po orezaní; 0 = vypnuté, inak treba CUDA
   seed: 0                  # poradie pohľadov pri dotréningu
   eval: true               # metriky pred a po
   lpips: true
@@ -124,7 +124,8 @@ refinement:
 ```
 
 Predvolené hodnoty vychádzajú z meraní na *m360_room* (pozri Stav): orezanie mierky a ihiel
-je vypnuté, lebo bez dotréningu robí diery. Ohraničenie a izolované gaussiány sú zapnuté
+je vypnuté, lebo bez dotréningu robí diery. Dotréning (2000 krokov) je zapnutý: vráti väčšinu
+straty PSNR po orezaní za ~4,5 min na GTX 1650 (500k gaussiánov). Ohraničenie a izolované gaussiány sú zapnuté
 (rozhodnutie z 2026-10-26 po vizuálnom porovnaní v SuperSplate): pre sémantickú vrstvu a úpravy
 je dôležitejšia čistá geometria než odlesky a výhľad z okna, pozri Riziká.
 
@@ -133,7 +134,8 @@ je dôležitejšia čistá geometria než odlesky a výhľad z okna, pozri Rizik
 Orezanie beží na CPU (NumPy), pre 1 M gaussiánov a ~300 kamier rádovo sekundy až desiatky sekúnd.
 Metriky pred a po a dotréning potrebujú CUDA GPU (render cez gsplat, ~1 GB VRAM na metriky,
 dotréning približne ako tréning v 02 bez densifikácie). Prostredie `sp-gs`.
-S `eval: false` a `finetune_steps: 0` fáza GPU nepotrebuje. Dotréning drží všetky tréningové
+S `eval: false` a `finetune_steps: 0` fáza GPU nepotrebuje (default má dotréning zapnutý).
+Dotréning trvá ~0,13 s na krok pri 500k gaussiánoch a 1556×1037 (GTX 1650, WSL). Dotréning drží všetky tréningové
 snímky v RAM (uint8, pri 272 snímkach 1556×1037 ~1,3 GB, ako 02).
 
 ## Validácia výstupu
@@ -229,8 +231,31 @@ a confidence s fázou 03 a bez nej (`impl: none`).
 - [x] dotréning po orezaní (`finetune_steps`, 2026-10-27, `contract_version` 3): implementácia
   a test na CPU (obmedzenie ihiel); kontraktový test dotréningu (`test_finetune`) potrebuje CUDA
   a zatiaľ nebežal
-- [ ] dotréning na *m360_room*: PSNR pred a po pri 500 / 1000 / 2000 krokoch, so skracovaním
-  ihiel (`max_aniso` 10) a bez neho; potom rozhodnúť o defaulte (čaká na súhlas s GPU)
+- [x] dotréning na *m360_room* (2026-10-27, GTX 1650 vo WSL, výstup 02 z `fast` s `aniso_reg` 0,7
+  a `depth_reg` 0,2: 500k gaussiánov, 262 train / 39 test, 1556×1037). Pred orezaním PSNR 30,23,
+  SSIM 0,926, LPIPS 0,157. Najhorší pohľad = najväčší pokles PSNR jedného testovacieho pohľadu:
+
+  | Nastavenie | Ponechané | Dotréning | PSNR | SSIM | LPIPS | Najhorší pohľad |
+  |---|---|---|---|---|---|---|
+  | default orezanie, bez dotréningu | 404 768 | — | 25,16 | 0,895 | 0,178 | −20,2 dB (f000289) |
+  | + 500 krokov | 404 768 | 73 s | 28,79 | 0,923 | 0,160 | −11,4 dB |
+  | + 1000 krokov (`fast`) | 404 768 | 134 s | 29,39 | 0,926 | 0,156 | −8,7 dB |
+  | **+ 2000 krokov (default)** | 404 768 | 263 s | **29,73** | 0,927 | 0,153 | −3,3 dB (f000033) |
+  | + 4000 krokov | 404 768 | 518 s | 30,36 | 0,931 | 0,146 | −2,8 dB |
+  | `max_aniso` 10 + 1000 krokov | 404 768 (17 skrátených) | 141 s | 29,37 | 0,926 | 0,157 | −8,7 dB |
+  | `isolated_keep_extent` 5, bez dotréningu | 405 208 | — | 26,69 | 0,913 | 0,170 | −17,4 dB |
+  | `isolated_keep_extent` 5 + 1000 krokov | 405 208 | 137 s | 29,70 | 0,927 | 0,155 | −4,4 dB |
+  | bez `crop`, bez dotréningu | 407 812 | — | 27,56 | 0,906 | 0,168 | −16,4 dB |
+  | bez `crop` + 1000 krokov | 407 812 | 138 s | 30,39 | 0,929 | 0,151 | −5,4 dB |
+
+  Dotréning vráti väčšinu straty po orezaní; pri 4000 krokoch sú SSIM a LPIPS lepšie než pred
+  orezaním. Default 2000 je kompromis medzi časom a najhorším pohľadom (pri 1000 ešte −8,7 dB).
+  Skracovanie ihiel nemá čo robiť: po `aniso_reg` v 02 prekročí pomer 10 len 17 gaussiánov
+  (pôvodne 12 108), `max_aniso` preto ostáva vypnuté. Najhorší pohľad f000289 (výhľad z okna,
+  odstránený ohraničením) dotréning nezaplní, lebo nepridáva gaussiány; `isolated_keep_extent` 5
+  ho zlepší (−8,7 → −4,4 dB pri 1000 krokoch) za cenu 440 gaussiánov. Či sa nevrátia škvrny,
+  treba pozrieť v SuperSplate, default ostáva 0.
+- [ ] vizuálne porovnanie `isolated_keep_extent` 0 / 5 s dotréningom (výhľad z okna, škvrny)
 - [ ] overenie na scéne z telefónu (*izba*), kde floaterov mimo kamier je viac (video *izby*
   nie je na disku, čaká na dáta)
 

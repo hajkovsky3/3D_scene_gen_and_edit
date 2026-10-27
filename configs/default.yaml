@@ -81,7 +81,7 @@ refinement:
   isolated_keep_extent: 0  # izolované s 3σ najdlhšej osi > toľko voxelov ponechať (veľké, riedke oblasti); 0 = vypnuté
   max_aniso: 0             # pomer najdlhšej a strednej osi (napr. 10); 0 = vypnuté, bez dotréningu robí medzery
   aniso_action: clamp      # clamp = skrátiť najdlhšiu os na limit | remove = odstrániť
-  finetune_steps: 0        # dotréning po orezaní na tréningových pohľadoch (napr. 1000); 0 = vypnuté, inak treba CUDA
+  finetune_steps: 2000     # dotréning po orezaní na tréningových pohľadoch; 0 = vypnuté (bez CUDA), inak treba CUDA
   seed: 0
   eval: true               # PSNR/SSIM/LPIPS pred a po na testovacích pohľadoch z 02
   lpips: true

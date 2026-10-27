@@ -12,3 +12,7 @@ sfm:
 reconstruction:
   iterations: 7000
   cap_max: 500000
+
+# --- 03_refinement ---
+refinement:
+  finetune_steps: 1000      # ~2 min namiesto ~4,5 min, najhorší pohľad horší (pozri phases/03_refinement.md)

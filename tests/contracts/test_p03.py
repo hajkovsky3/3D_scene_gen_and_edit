@@ -29,7 +29,7 @@ N_VIEWS = 24
 TEST_IDS = ["f000001", "f000009", "f000017"]
 N_SURFACE = 3000
 N_TRANSPARENT, N_FLOATERS, N_HUGE, N_NEEDLES = 40, 30, 20, 25
-CPU = {"eval": False, "isolated_min_count": 0}  # the synthetic surface is too sparse for it
+CPU = {"eval": False, "finetune_steps": 0, "isolated_min_count": 0}  # sparse synthetic surface
 
 
 def _logit(p: float) -> float:
@@ -133,7 +133,7 @@ def test_prune_clamps_needles(scene):
 
 
 def test_isolated_counted_after_other_criteria(scene):
-    report, _ = run(scene, RefinementPrune, {"eval": False, "min_views": 0})
+    report, _ = run(scene, RefinementPrune, {"eval": False, "finetune_steps": 0, "min_views": 0})
     # floaters and transparent gaussians are isolated too, but count for the earlier criterion
     assert report["removed"]["crop"] == N_FLOATERS
     assert report["removed"]["opacity"] == N_TRANSPARENT
@@ -141,7 +141,7 @@ def test_isolated_counted_after_other_criteria(scene):
 
 
 def test_isolated_keep_extent(scene):
-    base = {"eval": False, "min_views": 0, "crop": False}
+    base = {"eval": False, "finetune_steps": 0, "min_views": 0, "crop": False}
     report, _ = run(scene, RefinementPrune, base)
     # the huge gaussians (3 sigma = 30 m) are far from everything else only by their centers
     kept, _ = run(scene, RefinementPrune, base | {"isolated_keep_extent": 5})
@@ -220,7 +220,9 @@ def test_eval_before_after(scene):
     pytest.importorskip("gsplat")
     if not torch.cuda.is_available():
         pytest.skip("evaluation needs a CUDA GPU")
-    report, _ = run(scene, RefinementPrune, {"lpips": False, "num_test_renders": 2})
+    report, _ = run(
+        scene, RefinementPrune, {"lpips": False, "num_test_renders": 2, "finetune_steps": 0}
+    )
     assert report["test_frame_ids"] == TEST_IDS and len(report["per_view"]) == 3
     assert report["eval_resolution"] == [W, H] and report["lpips_net"] is None
     for key in ("before", "after"):
