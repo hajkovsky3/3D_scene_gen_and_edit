@@ -117,6 +117,13 @@ skóre víťaza / súčet skóre súperov vrátane víťaza a musí byť ≥ `mi
 Bez preferencie menšej pri rovnakom pokrytí vyhrá prvá inštancia v poradí, takže gauč
 vankúš pohltí (overené testom).
 
+**Fragmenty:** inštancie videné v menej ako `min_views` snímkach nehlasujú. Ich pokrytie
+sa počíta z 1–2 snímok, je triviálne vysoké, a ako „menšie“ by vyhrali nad skutočným
+objektom; potom ich vyradí filter a gaussiány ostanú nepriradené (na *room* takto jedna
+maska zobrala 23 k gaussiánov podlahy, spolu sa stratilo 15 % gaussiánov). Po hlasovaní sa
+masky fragmentu pripoja k inštancii, ktorá má aspoň `fragment_attach_share` jeho hlasov
+(label, príznak, `source_masks`), inak ostanú bez inštancie.
+
 ### 4. Vyčistenie v 3D
 
 - Odstránenie odľahlých gaussiánov inštancie (`outlier: components`): súvislé komponenty
@@ -124,7 +131,8 @@ vankúš pohltí (overené testom).
   k najbližšiemu susedovi (DBSCAN s `min_samples` = 1). Komponenty menšie ako
   `outlier_min_share` inštancie sa zahodia, najväčší ostáva. Kvantil namiesto mediánu, lebo
   hustota gaussiánov sa v rámci objektu veľmi mení a medián roztrhal riedke časti (test).
-- Zahodiť inštancie s < `min_gaussians` alebo videné v < `min_views` pohľadoch.
+- Zahodiť inštancie s < `min_gaussians` (videné v < `min_views` pohľadoch sú vyradené už
+  pred hlasovaním, pozri Fragmenty).
 
 ### 5. Label a príznak inštancie
 
@@ -172,6 +180,7 @@ lifting:
   outlier_min_share: 0.05
   min_gaussians: 200
   min_views: 3
+  fragment_attach_share: 0.5
   zero_shot_weight: 0.5
   feature_min_sim: 0.6
   num_debug: 6
@@ -193,6 +202,13 @@ GPU (gsplat). Pamäť riadená `mask_batch`; s cullingom a riedkym ukladaním zv
 - Veľké gaussiány pozadia zasahujú do viacerých masiek → nízka confidence; zvážiť regularizáciu v 02 alebo strop mierky v 03.
 - Objekty videné len z jednej strany → neúplné inštancie (iba viditeľná časť má gaussiány).
 - Rozhodnutie časť vs. celok (hierarchia) nie je riešené; aktuálne pravidlo „menšia vyhráva“.
+  Masky „kontajnerov“ (*floor* s kobercami, *entertainment center* s televízorom a policami)
+  preto v metrike konzistencie vychádzajú zle (*room*: IoU 0,24 a 0,21), hoci je to zámer.
+- Lesklé a odrazivé plochy (obrazovka, sklo, zrkadlo): 3DGS modeluje odlesky gaussiánmi za
+  povrchom, ktoré sú v iných pohľadoch inde. Na *room* ležia gaussiány z masiek televízora
+  v ostatných pohľadoch mimo nich (medián pokrytia 0,10) a rozptýlia sa do 11 iných inštancií
+  alebo ostanú nepriradené (IoU televízora 0,21). Lifting to neopraví; pomôcť môže geometria
+  z 02 (hĺbkový prior) alebo samostatné spracovanie odrazivých plôch.
 - Kalibrácia prahov — robiť na jednej scéne s ručnou 3D anotáciou a zafixovať.
 
 ## Evaluácia
@@ -233,6 +249,19 @@ prerušených trackoch, pozadie, šum; gradientový trik na 3 gaussiánoch iba s
   *kitchen island* 0,53 (časť/celok s *counter*: doska ostrova patrí inštancii *counter*,
   pravidlo „menšia vyhráva“). Debug rendery: objekty konzistentne oddelené naprieč pohľadmi
   (kanvica, misa s ovocím, rastlina, valček, chňapka, plech).
+- [x] *room* a *kitchen* a oprava fragmentov (2026-11-06, rovnaký stroj a profil; *room*
+  100 snímok, 1 586 masiek, 405 k gaussiánov; *kitchen* 621 masiek, 8 inštancií, scéna
+  zameraná na objekt). Priemer / medián IoU s 2D maskami, aktuálny kód (spájanie duplikátov
+  aj fragmenty):
+
+  | Scéna | `gsplat_vote` | `pointcloud_project` | Inštancie | Priradené gaussiány |
+  |---|---|---|---|---|
+  | *counter* | **0,712** / **0,823** | 0,664 / 0,761 | 70 | 82 % |
+  | *room* | **0,587** / **0,700** | 0,567 / 0,658 | 52 | 80 % (pred opravou fragmentov 66 %, IoU 0,521 / 0,590) |
+  | *kitchen* | **0,601** / **0,825** | 0,583 / 0,790 | 8 | 97 % |
+
+  Najhoršie masky sú „kontajnery“ (*floor*, *table*, *entertainment center*) a televízor
+  (pozri Riziká). Fáza 07 trvá 37–85 s, fáza 06 13–39 min podľa počtu masiek.
 - [x] baseline `pointcloud_project` (`pointcloud_project.py`: projekcia stredov, hĺbka renderovaná z 03; spájanie a hlasovanie spoločné)
 - [x] kontraktový test
 

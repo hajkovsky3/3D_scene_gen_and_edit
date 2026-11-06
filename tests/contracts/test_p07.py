@@ -31,6 +31,8 @@ for i, fid in enumerate(FRAMES):
     if i < 2:
         MASKS[f"{fid}_m003"] = ("t0003", "pillow", PILLOW[:280], 1)  # duplicate of t0001
 MASKS["f000001_m002"] = ("t0009", "lamp", BACKGROUND[:60], 2)  # seen once: dropped
+# a sofa fragment seen once: must not take its gaussians from the sofa, joins its masks
+MASKS["f000003_m002"] = ("t0010", "sofa", SOFA[100:200], 0)
 
 
 @register
@@ -129,13 +131,15 @@ def test_contract(tmp_path):
     assert sofa["label_votes"]["sofa"] > sofa["label_votes"]["couch"] > 0  # + zero-shot
     assert (inst_id[PILLOW] == 0).all()  # the smaller instance wins on overlap
     assert (inst_id[SOFA[1:]] == 1).all() and inst_id[OUTLIER] == -1  # outlier removed
+    assert sofa["track_ids"] == ["t0000", "t0010"] and "f000003_m002" in sofa["source_masks"]
     assert (inst_id[BACKGROUND] == -1).all()
     assert pillow["num_gaussians"] == 300 and sofa["num_gaussians"] == 299
     feat = np.load(out / "instance_features.npy")
     assert feat.dtype == np.float16 and feat.shape == (2, 4)
     assert feat[0].argmax() == 1 and feat[1].argmax() == 0
     report = json.loads((out / "report.json").read_text("utf-8"))
-    assert report["num_candidates"] == 5 and report["num_merged"] == 3
+    assert report["num_candidates"] == 6 and report["num_merged"] == 4
+    assert report["num_fragments"] == 2 and report["num_fragments_attached"] == 1
 
 
 def test_larger_wins_without_preference(tmp_path):

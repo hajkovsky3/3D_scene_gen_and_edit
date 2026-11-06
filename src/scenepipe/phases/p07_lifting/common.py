@@ -105,7 +105,8 @@ class LiftingBase(Phase):
         "outlier_quantile": 0.9,  # high, so sparse parts of an object stay linked
         "outlier_min_share": 0.05,  # drop components smaller than this share of the instance
         "min_gaussians": 200,
-        "min_views": 3,
+        "min_views": 3,  # instances seen in fewer frames do not vote (fragments)
+        "fragment_attach_share": 0.5,  # a fragment's masks join the instance with this vote share
         "zero_shot_weight": 0.5,  # weight of the 06 zero-shot label scores in label_votes
         "feature_min_sim": 0.6,  # drop mask embeddings less similar to the first mean
         "num_debug": 6,
@@ -185,24 +186,34 @@ class LiftingBase(Phase):
         insts = merge_candidates(list(cands.values()), [feats[k] for k in cands], n, cfg)
         log.info("%d instances after merging", len(insts))
 
-        # 3. voting, 3D cleanup, filtering
+        # 3. voting, 3D cleanup, filtering. Instances seen in fewer than min_views frames do
+        # not vote: their coverage comes from 1-2 frames (trivially high) and as small ones they
+        # would win over the real object, then be dropped and leave its gaussians unassigned.
         self.progress.update(0.8, "hlasovanie", "")
+        min_views = int(cfg["min_views"])
+        fragments = [c for c in insts if len(c.frames) < min_views]
+        insts = [c for c in insts if len(c.frames) >= min_views]
         inst_id, conf = vote(insts, frame_vis, n, cfg)
         if cfg["outlier"] == "components":
             inst_id = remove_outliers(inst_id, g.means, cfg)
         elif cfg["outlier"] != "none":
             raise ValueError(f"outlier {cfg['outlier']!r}, expected components | none")
         counts = np.bincount(inst_id[inst_id >= 0], minlength=len(insts))
-        keep = [
-            k
-            for k, c in enumerate(insts)
-            if counts[k] >= int(cfg["min_gaussians"]) and len(c.frames) >= int(cfg["min_views"])
-        ]
+        keep = [k for k in range(len(insts)) if counts[k] >= int(cfg["min_gaussians"])]
         keep.sort(key=lambda k: -counts[k])  # instance 0 = the largest
         remap = np.full(len(insts) + 1, -1, np.int32)  # last entry maps -1
         remap[keep] = np.arange(len(keep), dtype=np.int32)
         inst_id = remap[inst_id]
         conf = np.where(inst_id >= 0, conf, 0).astype(np.float16)
+        absorbed = 0
+        for frag, new in zip(fragments, attach_fragments(fragments, inst_id, cfg), strict=True):
+            if new >= 0:  # its masks describe that instance (labels, features, sources)
+                c = insts[keep[new]]
+                c.masks += frag.masks
+                c.frames |= frag.frames
+                c.tracks |= frag.tracks
+                absorbed += 1
+        log.info("%d fragments below min_views, %d attached to instances", len(fragments), absorbed)
 
         # 4. labels and features
         label_scores = self._label_scores()
@@ -247,7 +258,8 @@ class LiftingBase(Phase):
         assigned = int((inst_id >= 0).sum())
         _write_json(outs["report"], {
             "num_gaussians": n, "num_frames": len(frames), "num_masks": len(dets),
-            "num_candidates": len(cands), "num_merged": len(insts),
+            "num_candidates": len(cands), "num_merged": len(insts) + len(fragments),
+            "num_fragments": len(fragments), "num_fragments_attached": absorbed,
             "num_instances": len(instances),
             "assigned_share": round(assigned / max(n, 1), 4),
             "unobserved_share": round(float((visibility <= 0).mean()) if n else 0.0, 4),
@@ -511,6 +523,23 @@ def vote(
     inst_id[gid[win][ok]] = inst[win][ok]
     conf[gid[win][ok]] = c[ok]
     return inst_id, conf
+
+
+def attach_fragments(fragments: list[Candidate], inst_id: np.ndarray, cfg: dict) -> list[int]:
+    """For every fragment the final instance holding at least fragment_attach_share of its
+    votes, or -1."""
+    out = []
+    for c in fragments:
+        ids = inst_id[c.idx]
+        on = ids >= 0
+        total = float(c.wq.sum())
+        if not on.any() or total <= 0:
+            out.append(-1)
+            continue
+        mass = np.bincount(ids[on], c.wq[on])
+        best = int(mass.argmax())
+        out.append(best if mass[best] / total >= float(cfg["fragment_attach_share"]) else -1)
+    return out
 
 
 def remove_outliers(inst_id: np.ndarray, means: np.ndarray, cfg: dict) -> np.ndarray:

@@ -94,9 +94,7 @@ class MaskEmbeddingOpenClip(MaskEmbeddingBase):
 
         tok = self._proc(text=texts, padding=True, return_tensors="pt")
         with torch.inference_mode():
-            out = self._model.get_text_features(
-                **{k: v.to(self._text_dev) for k, v in tok.items()}
-            )
+            out = self._model.get_text_features(**{k: v.to(self._text_dev) for k, v in tok.items()})
         return _features(out)
 
 

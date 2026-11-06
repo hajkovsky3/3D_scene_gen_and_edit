@@ -166,7 +166,8 @@ lifting:
   outlier_quantile: 0.9
   outlier_min_share: 0.05
   min_gaussians: 200
-  min_views: 3
+  min_views: 3              # menej snímok = fragment: nehlasuje, masky sa iba pripoja
+  fragment_attach_share: 0.5
   zero_shot_weight: 0.5     # váha zero-shot skóre z 06 v label_votes
   feature_min_sim: 0.6
   num_debug: 6
