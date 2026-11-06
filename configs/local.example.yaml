@@ -23,3 +23,5 @@ phases:
   03_refinement: wsl_gs        # metriky pred/po cez gsplat
   04_tagging: wsl_gs           # RAM++ na GPU (zatiaľ v sp-gs, pozri envs/README.md)
   05_segmentation: wsl_gs      # Grounding DINO + SAM 2 na GPU (sp-gs)
+  06_mask_embedding: wsl_gs    # OpenCLIP cez transformers na GPU (sp-gs)
+  07_lifting: wsl_gs           # gsplat (sp-gs)

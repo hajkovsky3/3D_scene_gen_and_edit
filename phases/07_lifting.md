@@ -30,8 +30,8 @@ Je to vlastný modul a jeden z hlavných vlastných prínosov práce.
 - `instances.json`:
   ```json
   {
-    "contract_version": 1,
-    "embedding_model": "open_clip:ViT-H-14/laion2b_s32b_b79k",
+    "contract_version": 2,
+    "embedding_model": "hf:laion/CLIP-ViT-H-14-laion2B-s32B-b79K",
     "instances": [
       {"instance_id": 0, "label": "sofa",
        "label_votes": {"sofa": 0.78, "chair": 0.22},
@@ -43,7 +43,10 @@ Je to vlastný modul a jeden z hlavných vlastných prínosov práce.
   }
   ```
 - `instance_features.npy` — `float16[K, D]`, L2-normalizované, riadok podľa `feature_row`.
-- `debug/` — rendery „instance ID“ farbami z niekoľkých pohľadov vedľa 2D masiek.
+  Inštancie sú očíslované 0..K−1 od najväčšej, `feature_row` = `instance_id`.
+- `debug/` — rendery „instance ID“ farbami z niekoľkých pohľadov vedľa 2D masiek
+  (snímka | masky z 05 | render inštancií, rovnaká farba inštancie vo všetkých pohľadoch).
+- `report.json` — počty kandidátov, inštancií, podiel priradených a nepozorovaných gaussiánov.
 - `manifest.json`.
 
 ## Postup
@@ -68,6 +71,14 @@ a gaussiány filtrovať na tie vo výhľade kamery (frustum culling). Ukladať r
 Alternatíva bez gradientu: vlastný jednoduchý CUDA/Triton kernel alebo použiť výstup
 `gsplat` s per-pixel ID gaussiánov, ak ho daná verzia poskytuje.
 
+Implementačné poznámky: frustum culling netreba, gsplat gaussiány mimo výhľadu vyradí sám
+a `f` má pri 400 k gaussiánoch a 33 kanáloch len ~50 MB. Prvá dávka nesie navyše kanál
+samých jednotiek (viditeľnosť v snímke). Režim rasterizácie (antialiased/classic) sa preberá
+z manifestu 02. `render_scale` < 1 renderuje v nižšom rozlíšení (masky sa zmenšia
+s priemerovaním plochy); podiely `frac` sa tým nemenia. Uchováva sa iba
+`frac_i(m) = W_i(m) / vis_i(snímka) ≥ min_weight` (podiel viditeľnej hmoty gaussiánu
+v snímke, ktorý padne do masky), takže uloženie je riedke.
+
 ### 2. Od masiek ku 3D inštanciám
 
 - **S trackmi** (`has_tracks: true`): masky s rovnakým `track_id` sú jedna kandidátska inštancia.
@@ -76,6 +87,12 @@ Alternatíva bez gradientu: vlastný jednoduchý CUDA/Triton kernel alebo použi
   - vážené IoU / prekryv ich gaussiánových množín > `merge_overlap`, **a**
   - kosínusová podobnosť embeddingov > `merge_sim`.
 - Aj pri trackoch spraviť druhé kolo spájania (track sa mohol prerušiť → dva tracky, jeden objekt).
+
+Presne (implementované): *prekryv* kandidátov a, b = min(podiel hlasov a na nosiči b, podiel
+hlasov b na nosiči a), kde nosič sú gaussiány s `frac ≥ support_fraction` aspoň v jednej
+maske (vankúš na gauči má malý prekryv, lebo gauč má väčšinu hlasov mimo vankúša). Kandidáti,
+ktorí sú v niektorej snímke ako dve rôzne masky, sa nespájajú nikdy. Spájanie ide v kolách
+(`merge_rounds`), v kole union-find cez všetky vyhovujúce dvojice od najväčšieho prekryvu.
 
 ### 3. Hlasovanie o inštancii pre každý gaussián
 
@@ -88,17 +105,33 @@ inak `-1`.
 Prekryvné masky (vankúš na gauči): preferovať menšiu inštanciu pri hlasovaní (konfigurovateľné),
 inak by veľká inštancia pohltila malé.
 
+Presne (implementované): pokrytie `coverage_i(c) = Σ_{m∈c} W_i(m) / Σ_f vis_i(f)` cez snímky,
+kde má c masku (ako konzistentne leží gaussián v maskách c, keď je c pozorovaná). Gaussián je
+*kandidátom* inštancie pri `coverage ≥ min_coverage`. Víťaz: najmenšia kandidátska inštancia
+(`prefer_smaller_on_overlap`, veľkosť = počet gaussiánov na nosiči), inak tá s najvyšším
+pokrytím. Väčšie kandidátske inštancie sú vtedy „kontajnery“, nie súperi; `confidence` =
+skóre víťaza / súčet skóre súperov vrátane víťaza a musí byť ≥ `min_confidence`.
+Bez preferencie menšej pri rovnakom pokrytí vyhrá prvá inštancia v poradí, takže gauč
+vankúš pohltí (overené testom).
+
 ### 4. Vyčistenie v 3D
 
-- Odstránenie odľahlých gaussiánov inštancie (štatistický outlier filter / DBSCAN na stredoch,
-  ponechať najväčší komponent + blízke).
+- Odstránenie odľahlých gaussiánov inštancie (`outlier: components`): súvislé komponenty
+  stredov spojených do vzdialenosti `outlier_k` × kvantil `outlier_quantile` vzdialeností
+  k najbližšiemu susedovi (DBSCAN s `min_samples` = 1). Komponenty menšie ako
+  `outlier_min_share` inštancie sa zahodia, najväčší ostáva. Kvantil namiesto mediánu, lebo
+  hustota gaussiánov sa v rámci objektu veľmi mení a medián roztrhal riedke časti (test).
 - Zahodiť inštancie s < `min_gaussians` alebo videné v < `min_views` pohľadoch.
 
 ### 5. Label a príznak inštancie
 
-- `label_votes`: vážené hlasovanie labelov zdrojových masiek (+ zero-shot skóre z 06).
+- `label_votes`: vážené hlasovanie labelov zdrojových masiek (+ zero-shot skóre z 06 s váhou
+  `zero_shot_weight`); váha masky = `Σ_i W_i(m)` × kvalita, normalizované, top 5.
 - `instance_features`: vážený priemer embeddingov zdrojových masiek (váha = `Σ_i W_i(m)` × kvalita),
-  s vynechaním outlierov (embeddingy ďaleko od mediánu), L2 normalizácia.
+  v druhom prechode bez embeddingov s kosínusovou podobnosťou k prvému priemeru pod
+  `feature_min_sim`, L2 normalizácia. Masky vynechané v 06 (`skipped`) sa nepočítajú.
+
+Kvalita masky `q(m)` = `mask_score` × (`border_penalty`, ak sa dotýka okraja snímky).
 
 ## Implementácie
 
@@ -119,15 +152,25 @@ ako **nekomerčný** baseline na porovnanie (samostatné prostredie, pozri `docs
 lifting:
   impl: gsplat_vote
   mask_batch: 32
-  min_weight: 0.01
+  render_scale: 1.0
+  min_weight: 0.05          # uchovať W_i(m) iba pri frac_i(m) ≥ tomuto
+  support_fraction: 0.5
+  border_penalty: 0.5
   merge_overlap: 0.3
   merge_sim: 0.75
+  merge_rounds: 5
   min_confidence: 0.5
   min_coverage: 0.2
   prefer_smaller_on_overlap: true
+  outlier: components       # components | none
+  outlier_k: 3.0
+  outlier_quantile: 0.9
+  outlier_min_share: 0.05
   min_gaussians: 200
   min_views: 3
-  outlier: dbscan          # dbscan | statistical | none
+  zero_shot_weight: 0.5
+  feature_min_sim: 0.6
+  num_debug: 6
 ```
 
 ## Hardvér
@@ -157,14 +200,19 @@ GPU (gsplat). Pamäť riadená `mask_batch`; s cullingom a riedkym ukladaním zv
 
 ## Stav
 
-- [ ] načítanie vstupov, frustum culling
-- [ ] gradientový trik pre `W_i(m)` + test na syntetickej scéne (známe výsledky)
-- [ ] spájanie masiek do inštancií (s trackmi aj bez)
-- [ ] hlasovanie, prahy, vyčistenie
-- [ ] labely a príznaky inštancií
-- [ ] debug rendery
+Implementácia: `src/scenepipe/phases/p07_lifting/` (`common.py`, `gsplat_vote.py`),
+test: `tests/contracts/test_p07.py` (falošné váhy: gauč s vankúšom, vankúš v dvoch
+prerušených trackoch, pozadie, šum; gradientový trik na 3 gaussiánoch iba s CUDA, ~1 s).
+
+- [x] načítanie vstupov (culling netreba, pozri Postup)
+- [x] gradientový trik pre `W_i(m)` + test (súčet váh = alfa renderu v maske, zakrytie)
+- [x] spájanie masiek do inštancií (s trackmi aj bez)
+- [x] hlasovanie, prahy, vyčistenie
+- [x] labely a príznaky inštancií
+- [x] debug rendery (kód hotový, neoverené na reálnej scéne)
+- [ ] overenie na reálnej scéne (potrebuje výstup 06)
 - [ ] baseline `pointcloud_project`
-- [ ] kontraktový test
+- [x] kontraktový test
 
 ## Zdroje
 

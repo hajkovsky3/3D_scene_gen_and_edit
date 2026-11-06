@@ -132,27 +132,42 @@ segmentation:
 # --- 06_mask_embedding ---
 mask_embedding:
   impl: openclip
-  model: ViT-H-14
-  pretrained: laion2b_s32b_b79k
-  crop_strategy: multi      # bbox | masked | multi
-  bbox_padding: 0.15
-  min_crop_px: 32
+  model: laion/CLIP-ViT-H-14-laion2B-s32B-b79K   # váhy OpenCLIP cez transformers
+  model_dir: checkpoints/huggingface
+  device: auto
+  fp16: true
+  crop_strategy: multi      # bbox | masked | multi (priemer bbox a masked)
+  bbox_padding: 0.15        # okraj výrezu bbox, podiel dlhšej strany na každú stranu
+  masked_padding: 0.05
+  mask_background: gray     # gray | blur: čím nahradiť pixely mimo masky
+  min_crop_px: 32           # menšie masky sa vynechajú (index.json: skipped)
   batch_size: 64
   compute_label_scores: true
+  text_template: "a photo of a {}"
 
 # --- 07_lifting ---
 lifting:
   impl: gsplat_vote
-  mask_batch: 32
-  min_weight: 0.01
+  mask_batch: 32            # kanály masiek na jeden render (+1 kanál viditeľnosti)
+  render_scale: 1.0         # renderovať v tomto podiele rozlíšenia (rýchlosť, VRAM)
+  min_weight: 0.05          # uchovať W_i(m) iba ak do masky padne ≥ tento podiel gaussiánu
+  support_fraction: 0.5     # gaussián je „v maske“ (nosič kandidáta pri spájaní)
+  border_penalty: 0.5       # kvalita masiek dotýkajúcich sa okraja snímky
   merge_overlap: 0.3
   merge_sim: 0.75
+  merge_rounds: 5
   min_confidence: 0.5
   min_coverage: 0.2
   prefer_smaller_on_overlap: true
+  outlier: components       # components | none
+  outlier_k: 3.0            # polomer = k × kvantil vzdialeností k najbližšiemu susedovi
+  outlier_quantile: 0.9
+  outlier_min_share: 0.05
   min_gaussians: 200
   min_views: 3
-  outlier: dbscan          # dbscan | statistical | none
+  zero_shot_weight: 0.5     # váha zero-shot skóre z 06 v label_votes
+  feature_min_sim: 0.6
+  num_debug: 6
 
 # --- 08_scene_graph ---
 scene_graph:

@@ -169,7 +169,7 @@ snímky z `cameras.json` (undistortovanej), nie pôvodnej fotky.
 ## 8. Embeddingy
 
 - Uložené ako `float16`, **L2-normalizované**, tvar `[M, D]`.
-- Vedľa vždy `meta.json` s `model` (napr. `open_clip:ViT-H-14/laion2b_s32b_b79k`), `dim`
+- Vedľa vždy `meta.json` s `model` (napr. `hf:laion/CLIP-ViT-H-14-laion2B-s32B-b79K`), `dim`
   a `normalized: true`.
 - Fáza 10 musí na text použiť **ten istý model**, ktorý je uvedený v `meta.json` fázy 06.
   Ak sa model zmení, treba znova spustiť 06, 07, 08.
@@ -185,7 +185,7 @@ snímky z `cameras.json` (undistortovanej), nie pôvodnej fotky.
   "gaussian_instances": "edits/e001/12_editing/gaussian_instances.npz",
   "scene_graph": "edits/e001/12_editing/scene_graph.json",
   "node_features": "edits/e001/12_editing/node_features.npy",
-  "embedding_model": "open_clip:ViT-H-14/laion2b_s32b_b79k",
+  "embedding_model": "hf:laion/CLIP-ViT-H-14-laion2B-s32B-b79K",
   "cameras": "01_sfm/cameras.json"
 }
 ```

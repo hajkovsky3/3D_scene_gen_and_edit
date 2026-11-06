@@ -24,7 +24,7 @@ Po tejto fáze runner vytvorí počiatočný stav scény `state/v000`.
   {
     "contract_version": 1,
     "up_axis": "+z",
-    "embedding_model": "open_clip:ViT-H-14/laion2b_s32b_b79k",
+    "embedding_model": "hf:laion/CLIP-ViT-H-14-laion2B-s32B-b79K",
     "nodes": [
       {"node_id": "n0000", "instance_id": 0, "label": "sofa",
        "caption": "brown fabric three-seat sofa with two cushions",

@@ -41,7 +41,7 @@ Stav:
 | Grounding DINO Swin-T (`IDEA-Research/grounding-dino-tiny`, cez `transformers`) | 05 | Apache 2.0 | Apache 2.0 (karta modelu na HF) | OK | 689 MB (`model.safetensors`), stiahnuté so súhlasom autora 2026-10-27 do `checkpoints/huggingface`; verzie 1.5/1.6 a DINO-X sú len API; citovať Liu et al., ECCV 2024 |
 | SAM 2.1 Hiera-S (`facebook/sam2.1-hiera-small`, cez `transformers`) | 05 | Apache 2.0 | Apache 2.0 (karta modelu na HF) | OK | 184 MB, stiahnuté so súhlasom autora 2026-10-27 do `checkpoints/huggingface`; large (~900 MB) zatiaľ nestiahnutý; citovať Ravi et al., ICLR 2025 |
 | SAM 3 | 05 alt | SAM License | SAM License, prístup cez HF | HRANIČNÉ | prečítať LICENSE pred použitím |
-| OpenCLIP (ViT-H-14 laion2b) | 06, 10 | MIT | MIT | OK | |
+| OpenCLIP (ViT-H-14 laion2b, `laion/CLIP-ViT-H-14-laion2B-s32B-b79K`, cez `transformers`) | 06, 10 | MIT | MIT (karta modelu na HF) | OK | 3,9 GB (`model.safetensors` + tokenizer, bez duplicitných `.bin` a open_clip súborov), stiahnuté so súhlasom autora 2026-11-06 do `checkpoints/huggingface`; citovať Cherti et al., CVPR 2023 |
 | SigLIP / SigLIP 2 | 06 alt | Apache 2.0 | Apache 2.0 | OK | |
 | Qwen2.5-VL-7B-Instruct | 08 | Apache 2.0 | Apache 2.0 | OK | 3B a 72B majú iné licencie! |
 | Qwen3-8B | 09 | Apache 2.0 | Apache 2.0 | OVERIŤ konkrétnu veľkosť | |
