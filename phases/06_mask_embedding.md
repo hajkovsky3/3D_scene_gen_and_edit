@@ -135,6 +135,18 @@ za ~1 s). Beží v `sp-gs` vo WSL (transformers už sú tam kvôli 05).
   `merge_sim` 0,75 v 07). Zero-shot sa zhoduje s labelom detektora pri 44 % masiek; časť
   nezhôd sú synonymá (*bowl / mixing bowl*, *platter / tray*, *blender / pitcher*), časť
   chyby (*apple → orange*, *orange → onion*).
+- [x] ablácia výrezov na *counter* (2026-11-06, rovnaký stroj; 07 `gsplat_vote` s default
+  nastavením na každom výstupe, IoU podľa `scenepipe.eval.lifting_consistency`):
+
+  | `crop_strategy` | Čas embeddingov | Zero-shot zhoda s detektorom | IoU 07 (priemer / medián) |
+  |---|---|---|---|
+  | **`multi` (default)** | 2 304 s | **44 %** | 0,712 / 0,823 |
+  | `bbox` | 1 021 s | 32 % | 0,690 / 0,814 |
+  | `masked` (`fast`) | 1 181 s | 40 % | 0,712 / 0,823 |
+
+  Výrez s pozadím mimo masky je pre spájanie inštancií rovnako dobrý ako oba výrezy spolu
+  za polovičný čas; kontext z `bbox` pridáva hlavne zero-shot presnosť. Profil `fast`
+  používa `masked`.
 
 ## Zdroje
 

@@ -26,6 +26,10 @@ segmentation:
   frame_stride: 3           # každá 3. snímka: counter 18 min namiesto ~1 h (GTX 1650)
   redetect_every: 5         # okno 5 spracovaných snímok = 15 pôvodných
 
+# --- 06_mask_embedding ---
+mask_embedding:
+  crop_strategy: masked     # polovičný čas, rovnaké IoU v 07, zero-shot 40 % vs. 44 %
+
 # --- 07_lifting ---
 lifting:
   render_scale: 0.5         # štvrtina pixelov; podiely frac sa nemenia
