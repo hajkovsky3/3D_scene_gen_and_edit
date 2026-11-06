@@ -91,7 +91,10 @@ v snímke, ktorý padne do masky), takže uloženie je riedke.
 Presne (implementované): *prekryv* kandidátov a, b = min(podiel hlasov a na nosiči b, podiel
 hlasov b na nosiči a), kde nosič sú gaussiány s `frac ≥ support_fraction` aspoň v jednej
 maske (vankúš na gauči má malý prekryv, lebo gauč má väčšinu hlasov mimo vankúša). Kandidáti,
-ktorí sú v niektorej snímke ako dve rôzne masky, sa nespájajú nikdy. Spájanie ide v kolách
+ktorí sú v niektorej snímke ako dve rôzne masky, sa nespájajú, okrem prekryvu nad
+`duplicate_overlap` (0,7): sledovanie SAM 2 niekedy založí druhý track na objekt, ktorý už
+sleduje, a takéto duplikáty ležia na tých istých gaussiánoch (na *counter* sa valček rozpadol
+na 7 trackov, z toho 3 dvojice súčasných duplikátov). Spájanie ide v kolách
 (`merge_rounds`), v kole union-find cez všetky vyhovujúce dvojice od najväčšieho prekryvu.
 
 ### 3. Hlasovanie o inštancii pre každý gaussián
@@ -159,6 +162,7 @@ lifting:
   merge_overlap: 0.3
   merge_sim: 0.75
   merge_rounds: 5
+  duplicate_overlap: 0.7
   min_confidence: 0.5
   min_coverage: 0.2
   prefer_smaller_on_overlap: true
@@ -210,8 +214,26 @@ prerušených trackoch, pozadie, šum; gradientový trik na 3 gaussiánoch iba s
 - [x] hlasovanie, prahy, vyčistenie
 - [x] labely a príznaky inštancií
 - [x] debug rendery (kód hotový, neoverené na reálnej scéne)
-- [ ] overenie na reálnej scéne (potrebuje výstup 06)
-- [ ] baseline `pointcloud_project`
+- [x] overenie na Mip-NeRF 360 *counter* (2026-11-06, GTX 1650 vo WSL, `fast`: 80 snímok,
+  2 050 masiek, 169 trackov, 883 860 gaussiánov z 03, `render_scale` 0,5): váhy 61 s,
+  celá fáza 85 s, špička VRAM 0,85 GB. Metrika `python -m scenepipe.eval.lifting_consistency`
+  (inštancie vyrenderované späť do snímok, IoU s 2D maskami z 05, ktoré boli vstupom, teda
+  vernosť liftingu a konzistencia masiek, nie kvalita voči ground truth):
+
+  | Variant | Inštancie | Priradené gaussiány | Priemer IoU | Medián IoU | IoU > 0,5 |
+  |---|---|---|---|---|---|
+  | `gsplat_vote`, bez spájania duplikátov (prvá verzia) | 81 | 75 % | 0,545 | 0,715 | 59 % |
+  | `pointcloud_project`, bez spájania duplikátov | 82 | 79 % | 0,541 | 0,681 | 59 % |
+  | **`gsplat_vote` (default)** | 69 | 82 % | **0,708** | **0,822** | **80 %** |
+  | `pointcloud_project` | 72 | 82 % | 0,663 | 0,761 | 78 % |
+
+  Prvá verzia nechávala duplicitné a prerušené tracky ako samostatné kandidáty; tie prehrali
+  hlasovanie, vypadli pre `min_gaussians` a ich masky ostali bez inštancie (valček IoU 0,11 →
+  0,67 po oprave). Najhoršie labely po oprave: *juicer* 0,31, *can* 0,45, *bread* 0,52,
+  *kitchen island* 0,53 (časť/celok s *counter*: doska ostrova patrí inštancii *counter*,
+  pravidlo „menšia vyhráva“). Debug rendery: objekty konzistentne oddelené naprieč pohľadmi
+  (kanvica, misa s ovocím, rastlina, valček, chňapka, plech).
+- [x] baseline `pointcloud_project` (`pointcloud_project.py`: projekcia stredov, hĺbka renderovaná z 03; spájanie a hlasovanie spoločné)
 - [x] kontraktový test
 
 ## Zdroje

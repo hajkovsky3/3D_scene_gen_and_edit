@@ -1,7 +1,8 @@
 """Contract tests for phase 07_lifting (format of outputs, not quality).
 
 A fake implementation returns known weights: a sofa whose masks also cover a pillow on it,
-the pillow tracked in two broken tracks, a background and a short noise track. The gradient
+the pillow tracked in two broken tracks plus a duplicate track in the same frames (as SAM 2
+sometimes starts), a background and a short noise track. The gradient
 trick of `gsplat_vote` is checked on a few gaussians where CUDA is available.
 """
 
@@ -27,6 +28,8 @@ MASKS = {}
 for i, fid in enumerate(FRAMES):
     MASKS[f"{fid}_m000"] = ("t0000", "sofa", np.concatenate([SOFA, PILLOW]), 0)
     MASKS[f"{fid}_m001"] = ("t0001" if i < 2 else "t0002", "pillow", PILLOW, 1)
+    if i < 2:
+        MASKS[f"{fid}_m003"] = ("t0003", "pillow", PILLOW[:280], 1)  # duplicate of t0001
 MASKS["f000001_m002"] = ("t0009", "lamp", BACKGROUND[:60], 2)  # seen once: dropped
 
 
@@ -121,7 +124,8 @@ def test_contract(tmp_path):
     insts = doc["instances"]
     assert [i["label"] for i in insts] == ["pillow", "sofa"]  # the two broken tracks merged
     pillow, sofa = insts
-    assert pillow["track_ids"] == ["t0001", "t0002"] and pillow["num_views"] == 4
+    # broken and duplicate tracks merged; the sofa (also seen with the pillow) stays apart
+    assert pillow["track_ids"] == ["t0001", "t0002", "t0003"] and pillow["num_views"] == 4
     assert sofa["label_votes"]["sofa"] > sofa["label_votes"]["couch"] > 0  # + zero-shot
     assert (inst_id[PILLOW] == 0).all()  # the smaller instance wins on overlap
     assert (inst_id[SOFA[1:]] == 1).all() and inst_id[OUTLIER] == -1  # outlier removed
@@ -131,7 +135,7 @@ def test_contract(tmp_path):
     assert feat.dtype == np.float16 and feat.shape == (2, 4)
     assert feat[0].argmax() == 1 and feat[1].argmax() == 0
     report = json.loads((out / "report.json").read_text("utf-8"))
-    assert report["num_candidates"] == 4 and report["num_merged"] == 3
+    assert report["num_candidates"] == 5 and report["num_merged"] == 3
 
 
 def test_larger_wins_without_preference(tmp_path):
@@ -199,3 +203,22 @@ def test_gradient_trick_matches_alpha():
     ones = torch.ones((h, w, 1), device="cuda")
     unoccluded = phase._weights(phase._params(alone), cam, ones).cpu().numpy()[0, 0]
     assert grad[2, 0] < 0.2 * unoccluded
+
+
+def test_pointcloud_projection():
+    from scenepipe.core.cameras import Camera
+    from scenepipe.phases.p07_lifting.pointcloud_project import project_visible
+
+    cam = Camera("f", "x", 8, 6, 4.0, 4.0, 4.0, 3.0, np.eye(4))
+    means = np.array([
+        [0, 0, 2],  # center pixel (4, 3), on the surface
+        [0, 0, 4],  # same pixel, behind the surface
+        [0, 0, -1],  # behind the camera
+        [10, 0, 1],  # outside the image
+        [-0.9, -0.7, 1],  # pixel (0, 0)
+    ], np.float32)  # fmt: skip
+    depth = np.full((6, 8), 2.0)
+    depth[0, 0] = 1.0
+    u, v, ok = project_visible(means, cam, depth, 0.05)
+    assert ok.tolist() == [True, False, False, False, True]
+    assert (u[0], v[0]) == (4, 3) and (u[4], v[4]) == (0, 0)

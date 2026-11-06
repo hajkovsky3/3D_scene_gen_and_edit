@@ -26,7 +26,10 @@ ale **nesmú** sa stať súčasťou repozitára ani tréningových dát modulov.
 
 ## Ablácie (návrhy do práce)
 
-- Lifting: `gsplat_vote` vs. `pointcloud_project` (07).
+- Lifting: `gsplat_vote` vs. `pointcloud_project` (07). Bez 3D ground truth zatiaľ
+  `python -m scenepipe.eval.lifting_consistency --scene <scéna> [--lifting <adresár>]`:
+  inštancie sa vyrenderujú do snímok 05 a porovnajú s maskami (IoU, presnosť, úplnosť,
+  rozpis podľa labelov). Masky sú vstupom 07, takže meria vernosť liftingu, nie presnosť.
 - Tracking v 05 zapnutý/vypnutý → vplyv na kvalitu inštancií v 07.
 - Parsovanie: `llm_local` vs. `rules` (09); grounding: `clip_graph` vs. `label_only` (10).
 - Inpainting: per-view LaMa vs. referenčný pohľad + reprojekcia (12).

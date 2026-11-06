@@ -134,14 +134,15 @@ mask_embedding:
   impl: openclip
   model: laion/CLIP-ViT-H-14-laion2B-s32B-b79K   # váhy OpenCLIP cez transformers
   model_dir: checkpoints/huggingface
-  device: auto
-  fp16: true
+  device: auto              # obrazová vetva
+  fp16: false               # GTX 16xx: fp16 ~4× pomalšie ako fp32 (nemá tensor cores)
+  text_device: cpu          # textová vetva kóduje iba slovník; VRAM ostane obrazovej vetve
   crop_strategy: multi      # bbox | masked | multi (priemer bbox a masked)
   bbox_padding: 0.15        # okraj výrezu bbox, podiel dlhšej strany na každú stranu
   masked_padding: 0.05
   mask_background: gray     # gray | blur: čím nahradiť pixely mimo masky
   min_crop_px: 32           # menšie masky sa vynechajú (index.json: skipped)
-  batch_size: 64
+  batch_size: 16            # fp32 ViT-H: väčšia dávka na 4 GB GPU pretečie do RAM (rýchlosť sa nezvýši)
   compute_label_scores: true
   text_template: "a photo of a {}"
 
@@ -156,6 +157,7 @@ lifting:
   merge_overlap: 0.3
   merge_sim: 0.75
   merge_rounds: 5
+  duplicate_overlap: 0.7    # spojiť aj kandidátov z jednej snímky (duplicitné tracky SAM 2)
   min_confidence: 0.5
   min_coverage: 0.2
   prefer_smaller_on_overlap: true

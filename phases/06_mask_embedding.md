@@ -68,20 +68,30 @@ mask_embedding:
   model: laion/CLIP-ViT-H-14-laion2B-s32B-b79K
   model_dir: checkpoints/huggingface
   device: auto
-  fp16: true
+  fp16: false               # GTX 16xx: fp16 ~4× pomalšie (bez tensor cores)
+  text_device: cpu          # textová vetva kóduje iba slovník
   crop_strategy: multi      # bbox | masked | multi
   bbox_padding: 0.15
   masked_padding: 0.05
   mask_background: gray     # gray | blur
   min_crop_px: 32
-  batch_size: 64
+  batch_size: 16
   compute_label_scores: true
   text_template: "a photo of a {}"
 ```
 
 ## Hardvér
 
-GPU odporúčaná (ViT-H ~ 4 GB VRAM pri inferencii), ViT-L/B zvládne aj CPU pomalšie.
+GPU odporúčaná, ViT-L/B zvládne aj CPU pomalšie. ViT-H má obrazovú vetvu ~2,5 GB (fp32)
+a textovú ~1,4 GB; textová kóduje iba slovník (desiatky fráz), preto beží na CPU
+(`text_device: cpu`) a na GPU ide iba obrazová. Na 4 GB GPU vo fp32 s dávkou 16 je špička
+~2,6 GB; dávka 64 pri obsadenej VRAM (iné aplikácie) pretečie do systémovej pamäte a beh je
+niekoľkonásobne pomalší.
+
+**fp16 na GTX 16xx nepoužívať:** čip TU117 nemá tensor cores a maticové násobenie vo fp16
+je ~4× pomalšie ako vo fp32 (GTX 1650: 0,40 vs. 1,62 TFLOPS, 2048 × 2048). Na GPU s tensor
+cores (RTX) je `fp16: true` rýchlejšie a polovičné na VRAM. Výsledky sú prakticky rovnaké
+(kosínus embeddingov fp16 vs. fp32 ≥ 0,9997, rovnaký zero-shot label pri 99,8 % masiek).
 
 ## Validácia výstupu
 
@@ -110,7 +120,21 @@ za ~1 s). Beží v `sp-gs` vo WSL (transformers už sú tam kvôli 05).
 - [x] OpenCLIP enkódovanie (transformers), dávkovanie
 - [x] zero-shot label scores
 - [x] kontraktový test
-- [ ] stiahnutie váh a overenie na reálnej scéne
+- [x] stiahnutie váh (ViT-H, 3,9 GB) a overenie na reálnej scéne
+- [x] overenie na Mip-NeRF 360 *counter* (2026-11-06, GTX 1650 vo WSL, súčasne bežal
+  Android emulátor s ~1,4 GB VRAM; vstup: 05 s profilom `fast`, 80 snímok, 2 050 masiek,
+  slovník 42 tagov, 2 výrezy na masku):
+
+  | Nastavenie | Čas embeddingov | Rýchlosť |
+  |---|---|---|
+  | fp16, dávka 64 (prvá verzia) | 3 617 s | 1,1 výrezu/s |
+  | **fp32, textová vetva na CPU, dávka 16 (default)** | 2 304 s | 1,8 výrezu/s |
+
+  (Samostatný benchmark bez I/O: fp32 2,6 výrezu/s, fp16 1,1, nezávisle od veľkosti dávky.)
+  Kosínusová podobnosť masiek v jednom tracku 0,83, v rôznych trackoch 0,59 (pre prah
+  `merge_sim` 0,75 v 07). Zero-shot sa zhoduje s labelom detektora pri 44 % masiek; časť
+  nezhôd sú synonymá (*bowl / mixing bowl*, *platter / tray*, *blender / pitcher*), časť
+  chyby (*apple → orange*, *orange → onion*).
 
 ## Zdroje
 

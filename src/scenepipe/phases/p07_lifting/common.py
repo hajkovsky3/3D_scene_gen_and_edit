@@ -96,6 +96,7 @@ class LiftingBase(Phase):
         "merge_overlap": 0.3,
         "merge_sim": 0.75,
         "merge_rounds": 5,
+        "duplicate_overlap": 0.7,  # merge even candidates seen in one frame (duplicate tracks)
         "min_confidence": 0.5,
         "min_coverage": 0.2,
         "prefer_smaller_on_overlap": True,
@@ -389,9 +390,11 @@ def merge_sparse(idx_list, sums_list, max_list):
 def merge_candidates(
     cands: list[Candidate], feats: list[np.ndarray], n: int, cfg: dict
 ) -> list[Candidate]:
-    """Greedy rounds of merging: two candidates join if they never appear as different masks
-    in one frame, their gaussian supports overlap both ways (weighted share of each one's votes
-    on the other's support > merge_overlap) and their features are similar (> merge_sim)."""
+    """Greedy rounds of merging: two candidates join if their gaussian supports overlap both
+    ways (weighted share of each one's votes on the other's support > merge_overlap), their
+    features are similar (> merge_sim) and they never appear as different masks in one frame,
+    unless the overlap exceeds duplicate_overlap: the video tracker sometimes starts a second
+    track on an object it already tracks, and such duplicates lie on the same gaussians."""
     from scipy import sparse
 
     cands = list(cands)
@@ -422,7 +425,8 @@ def merge_candidates(
         )
         together = (fr @ fr.T).toarray() > 0
         ok = (overlap > float(cfg["merge_overlap"])) & (sim > float(cfg["merge_sim"]))
-        ok &= ~together
+        dup = overlap > float(cfg["duplicate_overlap"])
+        ok &= ~together | dup
         np.fill_diagonal(ok, False)
         if not ok.any():
             break
@@ -432,7 +436,7 @@ def merge_candidates(
         pa, pb = np.nonzero(np.triu(ok))
         for i in np.argsort(-overlap[pa, pb]):
             ra, rb = _root(parent, pa[i]), _root(parent, pb[i])
-            if ra != rb and not members[ra] & members[rb]:  # still never in one frame
+            if ra != rb and (dup[pa[i], pb[i]] or not members[ra] & members[rb]):
                 parent[rb] = ra
                 members[ra] |= members.pop(rb)
         groups: dict[int, list[int]] = {}

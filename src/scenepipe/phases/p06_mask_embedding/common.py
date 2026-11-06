@@ -37,7 +37,7 @@ class MaskEmbeddingBase(Phase):
         "masked_padding": 0.05,
         "mask_background": "gray",  # gray | blur: what replaces pixels outside the mask
         "min_crop_px": 32,  # masks whose bbox is smaller on both sides are skipped
-        "batch_size": 64,
+        "batch_size": 16,
         "compute_label_scores": True,
         "text_template": "a photo of a {}",
     }
