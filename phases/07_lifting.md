@@ -262,6 +262,24 @@ prerušených trackoch, pozadie, šum; gradientový trik na 3 gaussiánoch iba s
 
   Najhoršie masky sú „kontajnery“ (*floor*, *table*, *entertainment center*) a televízor
   (pozri Riziká). Fáza 07 trvá 37–85 s, fáza 06 13–39 min podľa počtu masiek.
+- [x] citlivosť na prahy (2026-11-06, váhy z GPU raz, potom iba spájanie, hlasovanie
+  a meranie; priemer IoU / medián / podiel IoU > 0,5):
+
+  | Variant | *counter* | *room* |
+  |---|---|---|
+  | default | 0,712 / 0,823 / 81 % | 0,587 / 0,700 / 68 % |
+  | `merge_sim` 0,65 | 0,726 / 0,831 / 82 % | 0,588 / 0,700 / 68 % |
+  | `merge_sim` 0,85 | 0,662 / 0,805 / 73 % | 0,570 / 0,671 / 65 % |
+  | `merge_overlap` 0,2 | 0,713 / 0,823 / 81 % | 0,591 / 0,701 / 69 % |
+  | `merge_overlap` 0,5 | 0,713 / 0,822 / 81 % | 0,565 / 0,664 / 64 % |
+  | `min_coverage` 0,1 | 0,694 / 0,791 / 79 % | 0,586 / 0,717 / 67 % |
+  | `min_coverage` 0,35 | 0,719 / 0,839 / 81 % | 0,592 / 0,679 / 67 % |
+  | `min_confidence` 0,3 | 0,712 / 0,823 / 81 % | 0,588 / 0,701 / 68 % |
+
+  Najcitlivejší je `merge_sim` (prísnejšie spájanie škodí na oboch scénach). Ostatné zmeny
+  sú v rozpätí ±0,02 a nekonzistentné medzi scénami, preto default ostáva; metrika meria
+  vernosť voči vstupným maskám, ladiť podľa nej by bolo pretrénovanie. Na kalibráciu treba
+  ručnú 3D anotáciu (Riziká).
 - [x] baseline `pointcloud_project` (`pointcloud_project.py`: projekcia stredov, hĺbka renderovaná z 03; spájanie a hlasovanie spoločné)
 - [x] kontraktový test
 
