@@ -20,6 +20,7 @@ from typing import Any
 import yaml
 
 from scenepipe.core.phase import get_impl
+from scenepipe.core.state import write_initial_state
 from scenepipe.core.workspace import EDIT_PHASES, PHASES, Workspace
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -92,6 +93,8 @@ def run_phase(
     t0 = time.perf_counter()
     outs = get_impl(phase, impl)(ws, cfg, edit_id).execute()
     log.info("%s (%s) done in %.0f s", phase, impl, time.perf_counter() - t0)
+    if phase == "08_scene_graph":  # the build ends with the initial scene state
+        log.info("state written: %s", ws.rel(write_initial_state(ws)))
     return outs
 
 

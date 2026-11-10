@@ -79,7 +79,7 @@ a masky zo segmentácie) je v [`phases/README.md`](phases/README.md).
 | 05 | **Segmentácia** | Nájde objekty zo slovníka na každej snímke a vytvorí ich presné masky. Ten istý objekt sleduje naprieč snímkami. | Grounding DINO + SAM 2 |
 | 06 | **Embeddingy** | Ku každej maske vypočíta CLIP vektor, vďaka ktorému sa dá objekt neskôr nájsť podľa ľubovoľného textu. | OpenCLIP |
 | 07 | **Lifting 2D → 3D** | Prenesie 2D masky na gaussiány: každý gaussián dostane objekt, ku ktorému patrí. Vlastný modul. | vlastný kód nad gsplat |
-| 08 | **Graf scény** | Z objektov postaví graf: bounding boxy, popisy objektov a vzťahy ako *na* alebo *vedľa*. | vlastný kód + Qwen2.5-VL |
+| 08 | **Graf scény** | Z objektov postaví graf: bounding boxy, popisy objektov a vzťahy ako *na* alebo *vedľa*. | vlastný kód + Qwen3-VL-4B |
 
 ### Edit loop: úprava promptom
 

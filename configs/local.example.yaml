@@ -25,3 +25,4 @@ phases:
   05_segmentation: wsl_gs      # Grounding DINO + SAM 2 na GPU (sp-gs)
   06_mask_embedding: wsl_gs    # OpenCLIP cez transformers na GPU (sp-gs)
   07_lifting: wsl_gs           # gsplat (sp-gs)
+  08_scene_graph: wsl_gs       # VLM Qwen3-VL-4B (bitsandbytes) na GPU (sp-gs)

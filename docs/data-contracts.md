@@ -191,7 +191,9 @@ snímky z `cameras.json` (undistortovanej), nie pôvodnej fotky.
 ```
 
 Stav je len **ukazovateľ** na súbory, nič sa nekopíruje. `v000` vytvorí runner po fáze 08
-(ukazuje na výstupy 03, 07, 08). Vďaka tomu sa dá ľubovoľne vrátiť k staršiemu stavu
+(ukazuje na výstupy 03, 07, 08; `parent` je `null`, `created_by` je manifest 08; kód
+v `core/state.py`). `state/current` je textový súbor s názvom aktuálneho stavu (symlinky
+na Windowse nie sú spoľahlivé). Vďaka tomu sa dá ľubovoľne vrátiť k staršiemu stavu
 a porovnať pred a po úprave.
 
 ## 10. Prompt (`edits/eNNN/prompt.json`)

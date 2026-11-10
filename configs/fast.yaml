@@ -33,3 +33,7 @@ mask_embedding:
 # --- 07_lifting ---
 lifting:
   render_scale: 0.5         # štvrtina pixelov; podiely frac sa nemenia
+
+# --- 08_scene_graph ---
+scene_graph:
+  views_per_caption: 1       # jeden výrez na uzol: kitchen 13,0 namiesto 15,5 s na uzol

@@ -23,7 +23,7 @@ zmeny tieto:
 | 05 | [Segmentácia](05_segmentation.md) | build | snímky + slovník | masky inštancií + `detections.json` | Grounding DINO + SAM 2 |
 | 06 | [Embeddingy masiek](06_mask_embedding.md) | build | snímky + masky | CLIP vektor pre každú masku | OpenCLIP |
 | 07 | [Lifting](07_lifting.md) | build | gaussiány + kamery + masky + embeddingy | inštancia pre každý gaussián | vlastný kód (gsplat) |
-| 08 | [Scene graph](08_scene_graph.md) | build | gaussiány + inštancie + snímky | `scene_graph.json` | vlastný kód + Qwen2.5-VL |
+| 08 | [Scene graph](08_scene_graph.md) | build | gaussiány + inštancie + snímky | `scene_graph.json` | vlastný kód + Qwen3-VL-4B |
 | 09 | [Parsovanie promptu](09_prompt_parsing.md) | edit | prompt + graf | `edit_plan.json` (nevyriešené ciele) | Qwen (LLM) |
 | 10 | [Grounding](10_grounding.md) | edit | plán + graf + embeddingy | plán s ID uzlov | vlastný kód (CLIP + graf) |
 | 11 | [Generovanie objektu](11_asset_generation.md) | edit | text / obrázok | `asset.ply` v kanonickom tvare | FLUX.1-schnell + TRELLIS |

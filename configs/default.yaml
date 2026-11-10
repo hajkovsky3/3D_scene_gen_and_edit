@@ -175,13 +175,34 @@ lifting:
 # --- 08_scene_graph ---
 scene_graph:
   impl: geometric_vlm
-  vlm: Qwen/Qwen2.5-VL-7B-Instruct
-  vlm_quantization: 4bit      # none | 8bit | 4bit
+  vlm: Qwen/Qwen3-VL-4B-Instruct   # Apache 2.0; 4-bit ~2,9 GB VRAM
+  vlm_quantization: 4bit      # none | 8bit | 4bit (bitsandbytes, iba CUDA)
+  vlm_compute_dtype: auto     # auto | float16 | float32 (auto: float32 na GTX 16xx, fp16 je tam pomalé)
+  device: auto                # auto | cuda | cpu
   views_per_caption: 2
+  crop_size: 448              # strana štvorcového výrezu pre VLM, px
+  crop_context: 1.6           # strana výrezu = dlhšia strana bboxu × crop_context
+  vlm_batch_size: 1           # uzly na jedno volanie generate() (4-bit na GTX 1650: dávka nepomáha)
+  max_new_tokens: 80
+  label_correction: vocabulary   # off | vocabulary (iba na tag zo 04 / hlas zo 07) | any
+  relabel_check: true         # opravu potvrdiť výberom starý/nový label v každom pohľade
+  describe_structure: false   # popisy aj pre podlahu, steny
   obb_mode: gravity_aligned   # gravity_aligned | full
   obb_trim_percent: 1.5
-  on_eps_rel: 0.02
-  near_delta_rel: 0.05
+  min_opacity: 0.1            # geometria iba z gaussiánov s aspoň takouto opacity
+  min_extent_rel: 0.002       # najmenšia strana OBB, × mierka scény
+  bottom_percentile: 0.5      # spodok objektu pre `on` (tenké nohy stola prežijú)
+  max_points: 5000            # podmnožina bodov uzla na vzťahy
+  num_best_views: 3
+  best_view_min_gap: 5        # odstup najlepších pohľadov v spracovaných snímkach
+  border_penalty: 0.5         # skóre pohľadu, ak sa maska dotýka okraja snímky
+  structure_labels: [floor, wall, ceiling]   # + tagy `stuff` z 04
+  on_eps_rel: 0.02            # |spodok A - výška opory B| < eps × mierka scény
+  on_overlap: 0.3             # prekryv pôdorysov (podiel menšieho)
+  support_scale: 1.5          # zväčšenie pôdorysu A pri hľadaní opory pod ním
+  inside_share: 0.6           # podiel bodov A v OBB B
+  near_delta_rel: 0.05        # vzdialenosť bodov < delta × mierka scény
+  near_points: 1000
   semantic_relations: false
 
 # --- 09_prompt_parsing ---

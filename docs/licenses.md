@@ -43,9 +43,11 @@ Stav:
 | SAM 3 | 05 alt | SAM License | SAM License, prístup cez HF | HRANIČNÉ | prečítať LICENSE pred použitím |
 | OpenCLIP (ViT-H-14 laion2b, `laion/CLIP-ViT-H-14-laion2B-s32B-b79K`, cez `transformers`) | 06, 10 | MIT | MIT (karta modelu na HF) | OK | 3,9 GB (`model.safetensors` + tokenizer, bez duplicitných `.bin` a open_clip súborov), stiahnuté so súhlasom autora 2026-11-06 do `checkpoints/huggingface`; citovať Cherti et al., CVPR 2023 |
 | SigLIP / SigLIP 2 | 06 alt | Apache 2.0 | Apache 2.0 | OK | |
-| Qwen2.5-VL-7B-Instruct | 08 | Apache 2.0 | Apache 2.0 | OK | 3B a 72B majú iné licencie! |
+| Qwen2.5-VL-7B-Instruct | 08 | Apache 2.0 | Apache 2.0 | OK | 3B a 72B majú iné licencie! (3B: karta na HF bez `apache-2.0`, Qwen Research License); 16,6 GB, zatiaľ nestiahnuté (na silnejšiu GPU) |
+| Qwen3-VL-4B-Instruct (`Qwen/Qwen3-VL-4B-Instruct`, cez `transformers`) | 08 | Apache 2.0 | Apache 2.0 (metadáta karty modelu na HF, overené 2026-11-08) | OK | 8,9 GB (safetensors + tokenizer), stiahnuté so súhlasom autora 2026-11-08 do `checkpoints/huggingface`; VLM implementácie `geometric_vlm` (4-bit NF4, ~2,9 GB VRAM na GTX 1650); 2B a 8B tiež Apache 2.0; citovať Qwen3-VL Technical Report |
+| `bitsandbytes` 0.50 (4-bit/8-bit kvantizácia) a `accelerate` 1.15 (`device_map`) | 08 | MIT / Apache 2.0 | — | OK | inštalované do `sp-gs` so súhlasom autora 2026-11-08; iba CUDA, na CPU sa model načíta bez kvantizácie |
 | Qwen3-8B | 09 | Apache 2.0 | Apache 2.0 | OVERIŤ konkrétnu veľkosť | |
-| Florence-2 | 08 alt | MIT | MIT | OK | |
+| Florence-2-large (`florence-community/Florence-2-large`, natívne v `transformers` 5, bez `trust_remote_code`) | 08 alt (`florence`) | MIT | MIT (metadáta karty modelu na HF, overené 2026-11-08) | OK | 1,55 GB, stiahnuté so súhlasom autora 2026-11-08 do `checkpoints/huggingface`; konverzia pôvodného `microsoft/Florence-2-large` (MIT, vlastný kód v repozitári) do formátu `transformers`; citovať Xiao et al., CVPR 2024 |
 | FLUX.1-schnell | 11 | Apache 2.0 | Apache 2.0 | OK | FLUX.1-dev je nekomerčný! |
 | BiRefNet | 11 | MIT | MIT | OVERIŤ | |
 | TRELLIS / TRELLIS.2 | 11 | MIT | MIT | OVERIŤ závislosti | nvdiffrast (NVIDIA, nekomerčná), rasterizéry odvodené od INRIA; ak sú tieto závislosti nutné, TRELLIS sa stáva `NEKOMERČNÉ` alternatívou a primárnou cestou 11 zostáva `primitive` / permisívny pipeline |

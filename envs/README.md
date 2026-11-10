@@ -8,7 +8,7 @@ Fázy komunikujú iba cez súbory, takže každá skupina môže mať vlastné p
 | `sp-core` | 00, 01, runner | opencv, pillow, pycolmap, numpy |
 | `sp-gs` | 02, 03, 07, 12, 13 (+ 01 s GPU párovaním, zatiaľ aj 04 a 05) | torch, gsplat, transformers (hĺbkový prior), viser, LaMa, pycolmap |
 | `sp-seg` | 06, 10 (04 a 05 sa presunú sem, ak bude treba) | torch, Grounding DINO, SAM 2, open_clip, RAM++ |
-| `sp-llm` | 08 (VLM), 09 | transformers / vLLM, Qwen |
+| `sp-llm` | 08 (VLM; zatiaľ v `sp-gs`), 09 | transformers / vLLM, Qwen |
 | `sp-gen` | 11 | TRELLIS, diffusers (FLUX) |
 
 Balík `scenepipe` (jadro) sa inštaluje do každého prostredia (`pip install -e .`), aby fázy
@@ -74,4 +74,17 @@ Oba modely sú v `transformers` (už v `sp-gs`), netreba nič kompilovať. Váhy
 ```bash
 python -c "from huggingface_hub import snapshot_download as d; [d(r, cache_dir='checkpoints/huggingface', allow_patterns=['*.json', '*.txt', 'model.safetensors'])  for r in ('IDEA-Research/grounding-dino-tiny', 'facebook/sam2.1-hiera-small')]"
 pytest tests/contracts/test_p05.py tests/test_masks.py
+```
+
+### Fáza 08 (VLM Qwen3-VL-4B) v `sp-gs`
+
+Fáza 08 zatiaľ beží v `sp-gs` (transformers 5 už má `Qwen3VLForConditionalGeneration`), do
+`sp-llm` sa presunie, keď vznikne. 4-bit kvantizácia potrebuje `bitsandbytes` a `accelerate`.
+Váhy (iba so súhlasom, 8,9 GB):
+
+```bash
+source ~/sp-gs.sh
+pip install bitsandbytes accelerate
+python -c "from huggingface_hub import snapshot_download as d; d('Qwen/Qwen3-VL-4B-Instruct', cache_dir='checkpoints/huggingface', allow_patterns=['*.json', '*.safetensors', '*.txt', '*.jinja', 'LICENSE*', 'README.md'])"
+HF_HUB_OFFLINE=1 python -m scenepipe run 08_scene_graph --scene room
 ```
