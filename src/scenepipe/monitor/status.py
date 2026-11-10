@@ -6,6 +6,7 @@ into the same workspace directory.
 
 from __future__ import annotations
 
+import importlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -125,6 +126,61 @@ def phase_status(phase: str, d: Path | None, now: datetime) -> dict[str, Any]:
         out["impl"] = out["impl"] or manifest.get("impl")
         out["elapsed_s"] = _span(manifest.get("started_at"), manifest.get("finished_at"))
     return out
+
+
+_PLANNED: dict[tuple[str, str], tuple[list[str], str]] = {}
+
+
+def planned_steps(workspace: Path, phase: str, profile: str) -> tuple[list[str], str]:
+    """Steps a run of `phase` with `profile` would report, and a note on where they come from.
+
+    Asks the configured implementation (its `steps()` depends only on the config). If it cannot
+    be imported here (dependencies live in another environment, e.g. torch in WSL), falls back
+    to the steps of the most recent run of the same implementation in any scene. Cached.
+    """
+    key = (phase, profile)
+    if key not in _PLANNED:
+        _PLANNED[key] = _planned_steps(workspace, phase, profile)
+    return _PLANNED[key]
+
+
+def _planned_steps(workspace: Path, phase: str, profile: str) -> tuple[list[str], str]:
+    from scenepipe.cli import impl_module, is_implemented, load_config
+    from scenepipe.core.phase import get_impl
+    from scenepipe.core.workspace import Workspace
+
+    try:
+        cfg = load_config(phase, profile)
+    except (OSError, ValueError) as e:
+        return [], f"config sa nedá načítať: {e}"
+    impl = cfg.pop("impl", None)
+    if not impl or not is_implemented(phase, profile):
+        return [], "fáza zatiaľ nie je implementovaná"
+    try:
+        importlib.import_module(impl_module(phase, impl))
+        probe = get_impl(phase, impl)(Workspace(workspace / "_steps_probe"), cfg, "e000")
+        steps = probe.steps()
+    except Exception:  # noqa: BLE001 - any failure only means "ask a previous run instead"
+        steps = None
+    if steps is not None:
+        return [*steps, "validácia"] if steps else [], f"plán pre profil {profile}"
+    last = _last_run_steps(workspace, phase, impl)
+    if last:
+        steps, scene = last
+        return steps, f"podľa posledného behu na scéne {scene}"
+    return [], "kroky budú známe po prvom spustení"
+
+
+def _last_run_steps(workspace: Path, phase: str, impl: str) -> tuple[list[str], str] | None:
+    best: tuple[str, list[str], str] | None = None
+    for scene in list_scenes(workspace):
+        prog = read_progress(workspace / scene / phase)
+        if not prog or prog.get("impl") != impl or not prog.get("steps"):
+            continue
+        stamp = prog.get("updated_at") or ""
+        if best is None or stamp > best[0]:
+            best = (stamp, list(prog["steps"]), scene)
+    return (best[1], best[2]) if best else None
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:

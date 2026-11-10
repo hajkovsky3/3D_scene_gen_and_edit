@@ -8,6 +8,7 @@ from __future__ import annotations
 import sys
 import time
 import tkinter as tk
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,7 @@ import customtkinter as ctk
 from scenepipe.core.workspace import BUILD_PHASES, PHASES
 from scenepipe.monitor.run_panel import RunPanel
 from scenepipe.monitor.runner import PipelineRun, Runners
-from scenepipe.monitor.status import list_scenes, scene_status
+from scenepipe.monitor.status import list_scenes, planned_steps, scene_status
 from scenepipe.monitor.theme import C
 
 POLL_MS = 1500
@@ -57,8 +58,10 @@ CURRENT_STEP = {
 }
 
 # Graph layout in logical units (mirrors the DAG in phases/README.md); x, y = node centre.
-VIEW_W, VIEW_H = 1200, 560
-NW, NH = 160, 60
+# Columns are 180 apart and nodes 150 wide, so edges bend in the 30-unit gaps between them.
+VIEW_W, VIEW_H = 1200, 612
+NW, NH = 150, 60
+CORNER = 6  # edge corners are cut at 45 degrees by this much (logical units)
 NODES: dict[str, dict[str, Any]] = {
     "00_ingest": {"x": 100, "y": 175},
     "01_sfm": {"x": 280, "y": 100},
@@ -70,28 +73,55 @@ NODES: dict[str, dict[str, Any]] = {
     "07_lifting": {"x": 820, "y": 175},
     "08_scene_graph": {"x": 1000, "y": 175},
     "S0": {"x": 1140, "y": 175, "label": "state/v000", "kind": "state", "w": 100},
-    "SN": {"x": 70, "y": 465, "label": "stav vN", "kind": "state", "w": 100},
-    "09_prompt_parsing": {"x": 250, "y": 400},
-    "10_grounding": {"x": 430, "y": 470},
-    "11_asset_generation": {"x": 610, "y": 400},
-    "12_editing": {"x": 790, "y": 470},
-    "S1": {"x": 950, "y": 470, "label": "stav vN+1", "kind": "state", "w": 100},
-    "13_rendering": {"x": 1110, "y": 470},
+    "SN": {"x": 70, "y": 477, "label": "stav vN", "kind": "state", "w": 100},
+    "R01": {"x": 70, "y": 567, "label": "z 01 SfM", "kind": "ref", "w": 100},
+    "09_prompt_parsing": {"x": 250, "y": 412},
+    "10_grounding": {"x": 430, "y": 482},
+    "11_asset_generation": {"x": 610, "y": 412},
+    "12_editing": {"x": 790, "y": 482},
+    "S1": {"x": 950, "y": 482, "label": "stav vN+1", "kind": "state", "w": 100},
+    "13_rendering": {"x": 1110, "y": 482},
 }
-EDGES = [
-    ("00_ingest", "01_sfm"), ("00_ingest", "04_tagging"),
-    ("01_sfm", "02_reconstruction"), ("00_ingest", "02_reconstruction"),
-    ("04_tagging", "05_segmentation"), ("00_ingest", "05_segmentation"),
-    ("01_sfm", "05_segmentation", "dashed"), ("05_segmentation", "06_mask_embedding"),
-    ("02_reconstruction", "03_refinement"),
-    ("03_refinement", "07_lifting"), ("01_sfm", "07_lifting"),
-    ("05_segmentation", "07_lifting"), ("06_mask_embedding", "07_lifting"),
-    ("07_lifting", "08_scene_graph"), ("03_refinement", "08_scene_graph"),
-    ("08_scene_graph", "S0"),
-    ("SN", "09_prompt_parsing"), ("SN", "10_grounding"),
-    ("09_prompt_parsing", "10_grounding"), ("10_grounding", "11_asset_generation"),
-    ("10_grounding", "12_editing"), ("11_asset_generation", "12_editing"),
-    ("SN", "12_editing"), ("12_editing", "S1"), ("S1", "13_rendering"),
+# Edges = the files a phase reads (phases 00-08: `inputs()` in the code, 09-13: their
+# specification); same DAG as phases/README.md. Routes are orthogonal (source, target,
+# waypoints, dashed); corners are drawn cut at 45 degrees (CORNER). They run in the 30-unit
+# gaps between columns, in the channel between the build rows (y 130-220) and in buses above
+# and below the rows; edges from one source share the bus. "R01" stands for the cameras and
+# undistorted images of 01 read by the edit loop.
+EDGES: list[tuple[str, str, list[tuple[float, float]], bool]] = [
+    ("00_ingest", "01_sfm", [(175, 160), (190, 160), (190, 100), (205, 100)], False),
+    ("00_ingest", "04_tagging", [(175, 190), (190, 190), (190, 250), (205, 250)], False),
+    ("01_sfm", "02_reconstruction", [(355, 100), (385, 100)], False),
+    ("01_sfm", "03_refinement", [(300, 70), (300, 52), (620, 52), (620, 70)], False),
+    ("01_sfm", "07_lifting", [(300, 70), (300, 52), (800, 52), (800, 145)], False),
+    ("01_sfm", "08_scene_graph", [(300, 70), (300, 52), (980, 52), (980, 145)], False),
+    ("01_sfm", "05_segmentation", [(300, 130), (300, 150), (440, 150), (440, 220)], False),
+    ("01_sfm", "06_mask_embedding", [(300, 130), (300, 150), (620, 150), (620, 220)], False),
+    ("02_reconstruction", "03_refinement", [(535, 100), (565, 100)], False),
+    ("03_refinement", "07_lifting", [(715, 100), (730, 100), (730, 160), (745, 160)], False),
+    ("03_refinement", "08_scene_graph", [(680, 70), (680, 36), (1020, 36), (1020, 145)], False),
+    ("04_tagging", "05_segmentation", [(355, 250), (385, 250)], False),
+    ("04_tagging", "06_mask_embedding", [(260, 280), (260, 314), (600, 314), (600, 280)], True),
+    ("04_tagging", "08_scene_graph", [(260, 280), (260, 314), (1020, 314), (1020, 205)], False),
+    ("05_segmentation", "06_mask_embedding", [(535, 250), (565, 250)], False),
+    ("05_segmentation", "07_lifting", [(460, 280), (460, 298), (840, 298), (840, 205)], False),
+    ("05_segmentation", "08_scene_graph", [(460, 280), (460, 298), (1000, 298), (1000, 205)], False),
+    ("06_mask_embedding", "07_lifting", [(715, 250), (730, 250), (730, 190), (745, 190)], False),
+    ("07_lifting", "08_scene_graph", [(895, 175), (925, 175)], False),
+    ("08_scene_graph", "S0", [(1075, 175), (1090, 175)], False),
+    ("SN", "09_prompt_parsing", [(120, 462), (145, 462), (145, 412), (175, 412)], False),
+    ("SN", "10_grounding", [(120, 487), (355, 487)], False),
+    ("SN", "12_editing", [(120, 500), (140, 500), (140, 527), (770, 527), (770, 512)], False),
+    ("R01", "10_grounding", [(120, 567), (450, 567), (450, 512)], False),
+    ("R01", "12_editing", [(120, 567), (810, 567), (810, 512)], False),
+    ("R01", "13_rendering", [(120, 567), (1110, 567), (1110, 512)], False),
+    ("09_prompt_parsing", "10_grounding", [(325, 412), (340, 412), (340, 470), (355, 470)], False),
+    ("10_grounding", "11_asset_generation",
+     [(505, 470), (520, 470), (520, 412), (535, 412)], False),
+    ("10_grounding", "12_editing", [(505, 494), (715, 494)], False),
+    ("11_asset_generation", "12_editing", [(685, 412), (700, 412), (700, 470), (715, 470)], False),
+    ("12_editing", "S1", [(865, 482), (900, 482)], False),
+    ("S1", "13_rendering", [(1000, 482), (1035, 482)], False),
 ]  # fmt: skip
 # Short names that fit a graph node; the side panel shows the full name.
 SHORT = {
@@ -116,13 +146,18 @@ def fmt_dur(s: float | None) -> str:
     return f"{sec} s"
 
 
-def _bezier(p0, p1, p2, p3, steps: int = 24) -> list[float]:
-    """Flattened cubic Bezier curve as [x0, y0, x1, y1, ...]."""
-    out: list[float] = []
-    for i in range(steps + 1):
-        t = i / steps
-        a, b, c, d = (1 - t) ** 3, 3 * (1 - t) ** 2 * t, 3 * (1 - t) * t**2, t**3
-        out += [a * p0[k] + b * p1[k] + c * p2[k] + d * p3[k] for k in (0, 1)]
+def chamfer(pts: list[tuple[float, float]], r: float) -> list[tuple[float, float]]:
+    """Orthogonal polyline with every corner cut at 45 degrees (equal cut on both legs)."""
+    out = [pts[0]]
+    for (x0, y0), (x1, y1), (x2, y2) in zip(pts, pts[1:], pts[2:], strict=False):
+        d_in, d_out = abs(x1 - x0) + abs(y1 - y0), abs(x2 - x1) + abs(y2 - y1)
+        c = min(r, d_in / 2, d_out / 2)
+        if c <= 0:
+            out.append((x1, y1))
+            continue
+        out.append((x1 - (x1 - x0) / d_in * c, y1 - (y1 - y0) / d_in * c))
+        out.append((x1 + (x2 - x1) / d_out * c, y1 + (y2 - y1) / d_out * c))
+    out.append(pts[-1])
     return out
 
 
@@ -133,11 +168,12 @@ def fit(text: str, n: int) -> str:
 class PhaseRow(ctk.CTkFrame):
     """One phase in the side panel; widgets are created once and updated in place."""
 
-    def __init__(self, master, phase_id: str):
+    def __init__(self, master, phase_id: str, on_click: Callable[[str], None]):
         super().__init__(
             master, fg_color=C["panel"], border_width=1, border_color=C["line"], corner_radius=9
         )
         self.phase_id = phase_id
+        self.expanded = False  # show the step checklist whatever the status (row selected)
         self.columnconfigure(0, weight=1)
         head = ctk.CTkFrame(self, fg_color="transparent")
         head.grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 6))
@@ -151,6 +187,13 @@ class PhaseRow(ctk.CTkFrame):
         self.impl.grid(row=0, column=2, padx=(7, 0))
         self.badge = ctk.CTkLabel(head, text="", font=ctk.CTkFont(size=12, weight="bold"))
         self.badge.grid(row=0, column=3, sticky="e")
+        self.chevron = ctk.CTkLabel(
+            head, text="▸", width=14, font=ctk.CTkFont(size=15), text_color=C["muted"]
+        )
+        self.chevron.grid(row=0, column=4, padx=(8, 0))
+        for w in (self, head, self.num, self.name, self.impl, self.badge, self.chevron):
+            w.bind("<Button-1>", lambda _e: on_click(phase_id))
+            w.configure(cursor="hand2")
         self.bar = ctk.CTkProgressBar(self, height=6, corner_radius=3, fg_color=C["pending"])
         self.bar.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 6))
         self.steps_box = ctk.CTkFrame(self, fg_color="transparent")
@@ -174,8 +217,14 @@ class PhaseRow(ctk.CTkFrame):
             wraplength=340,
         )  # fmt: skip
         self.error.grid(row=4, column=0, sticky="w", padx=12, pady=(0, 6))
+        self.note = ctk.CTkLabel(
+            self, text="", font=ctk.CTkFont(size=11), text_color=C["muted"], anchor="w",
+            justify="left", wraplength=340,
+        )  # fmt: skip
+        self.note.grid(row=5, column=0, sticky="w", padx=12, pady=(0, 6))
 
-    def update_from(self, p: dict[str, Any]) -> None:
+    def update_from(self, p: dict[str, Any], planned: tuple[list[str], str] | None = None) -> None:
+        """`planned`: steps and their source for a selected row without steps of its own."""
         status = p["status"]
         active = status in ("running", "stalled")
         self.name.configure(text=p["name"])
@@ -186,7 +235,10 @@ class PhaseRow(ctk.CTkFrame):
             badge = STATUS_TEXT[status] + (f" · {round(p['fraction'] * 100)} %" if active else "")
         self.badge.configure(text=badge, text_color=C[STATUS_COLOR[status]])
         border = {"running": "accent", "stalled": "warn", "failed": "fail"}.get(status, "line")
-        self.configure(border_color=C[border], border_width=2 if active else 1)
+        if self.expanded and not active:
+            border = "state"
+        self.configure(border_color=C[border], border_width=2 if active or self.expanded else 1)
+        self.chevron.configure(text="▾" if self.expanded else "▸")
 
         if status == "pending":
             self.bar.grid_remove()
@@ -197,8 +249,16 @@ class PhaseRow(ctk.CTkFrame):
             self.bar.set(p["fraction"])
             self.bar.grid()
 
-        show_steps = status in CURRENT_STEP and bool(p["steps"])
-        self._update_steps(p if show_steps else None)
+        steps, note = p["steps"], ""
+        if self.expanded and not steps and planned is not None:
+            steps, note = planned
+            if not steps:
+                note = note or "kroky nie sú známe"
+        live = status in CURRENT_STEP and bool(p["steps"])  # always shown while it matters
+        show_steps = bool(steps) and (live or self.expanded)
+        self._update_steps(steps if show_steps else None, p)
+        self.note.configure(text=note)
+        self.note.grid() if note and self.expanded else self.note.grid_remove()
         if status in ("pending", "done"):
             stage = ""
         elif show_steps and p["step"] is not None:
@@ -222,15 +282,15 @@ class PhaseRow(ctk.CTkFrame):
         )
         self.error.grid() if p["error"] else self.error.grid_remove()
 
-    def _update_steps(self, p: dict[str, Any] | None) -> None:
+    def _update_steps(self, steps: list[str] | None, p: dict[str, Any]) -> None:
         """Checklist of the phase's steps: done ✓, current (by status), pending ○."""
-        if p is None:
+        if steps is None:
             self.steps_box.grid_remove()
             return
-        if p["steps"] != self.step_names:
+        if steps != self.step_names:
             for label in self.step_labels:
                 label.destroy()
-            self.step_names = list(p["steps"])
+            self.step_names = list(steps)
             self.step_labels = [
                 ctk.CTkLabel(self.steps_box, text="", font=self.step_fonts[0], anchor="w",
                              justify="left", height=18, wraplength=340)
@@ -238,12 +298,14 @@ class PhaseRow(ctk.CTkFrame):
             ]  # fmt: skip
             for i, label in enumerate(self.step_labels):
                 label.grid(row=i, column=0, sticky="w")
-        current, message = p["step"], p["message"]
+        status = p["status"]
+        current = p["step"] if status in CURRENT_STEP else None
+        message = p["message"]
         for i, (name, label) in enumerate(zip(self.step_names, self.step_labels, strict=True)):
-            if current is not None and i < current:
+            if status == "done" or (current is not None and i < current):
                 mark, color, bold = "✓", "done", False
             elif i == current:
-                (mark, color), bold = CURRENT_STEP[p["status"]], True
+                (mark, color), bold = CURRENT_STEP[status], True
             else:
                 mark, color, bold = "○", "pending_ink", False
             text = f"{mark}  {name}" + (f"  ·  {message}" if i == current and message else "")
@@ -337,14 +399,14 @@ class MonitorApp(ctk.CTk):
         self._section_title(self.list, "BUILD").grid(row=r, column=0, sticky="w", pady=(0, 4))
         for phase in BUILD_PHASES:
             r += 1
-            self.rows[phase] = PhaseRow(self.list, phase)
+            self.rows[phase] = PhaseRow(self.list, phase, self._focus)
             self.rows[phase].grid(row=r, column=0, sticky="ew", pady=4, padx=(0, 6))
         r += 1
         self.edit_title = self._section_title(self.list, "EDIT LOOP")
         self.edit_title.grid(row=r, column=0, sticky="w", pady=(12, 4))
         for phase in (p for p in PHASES if p not in BUILD_PHASES):
             r += 1
-            self.rows[phase] = PhaseRow(self.list, phase)
+            self.rows[phase] = PhaseRow(self.list, phase, self._focus)
             self.rows[phase].grid(row=r, column=0, sticky="ew", pady=4, padx=(0, 6))
 
     def _section_title(self, master, text: str) -> ctk.CTkLabel:
@@ -400,8 +462,14 @@ class MonitorApp(ctk.CTk):
     def _update_rows(self) -> None:
         assert self.data is not None
         phases = self.data["phases"]
+        profile = self.run_panel.selected_profile()
         for p in phases:
-            self.rows[p["id"]].update_from(p)
+            row = self.rows[p["id"]]
+            row.expanded = p["id"] == self.selected
+            planned = None
+            if row.expanded and not p["steps"]:
+                planned = planned_steps(self.workspace, p["id"], profile)
+            row.update_from(p, planned)
         edit = self.data["edit_id"]
         self.edit_title.configure(
             text=f"EDIT LOOP · edits/{edit}" if edit else "EDIT LOOP · zatiaľ žiadna úprava"
@@ -436,23 +504,27 @@ class MonitorApp(ctk.CTk):
 
         by_id = {p["id"]: p for p in self.data["phases"]} if self.data else {}
         # bands
-        for y0, y1, label in ((4, 318, "BUILD · zo snímok, raz pre scénu"),
-                              (334, 556, "EDIT LOOP · pre každý prompt")):  # fmt: skip
+        for y0, y1, label in ((4, 328, "BUILD · zo snímok, raz pre scénu"),
+                              (342, 608, "EDIT LOOP · pre každý prompt")):  # fmt: skip
             self._round_rect(*pt(4, y0), *pt(1196, y1), 14 * s, fill="", outline=self._col("line"),
                              dash=(4, 5))  # fmt: skip
             cv.create_text(*pt(18, y0 + 22), text=label, anchor="w", fill=self._col("muted"),
                            font=self._font(15, s, bold=True))  # fmt: skip
         # edges
-        for a, b, *style in EDGES:
-            p, q = NODES[a], NODES[b]
-            x1, x2 = p["x"] + p.get("w", NW) / 2, q["x"] - q.get("w", NW) / 2
-            dx = max((x2 - x1) / 2, 30)
+        hot_edges = []
+        for a, b, route, dashed in EDGES:
             hot = b in by_id and by_id[b]["status"] == "running"
-            ctrl = (pt(x1, p["y"]), pt(x1 + dx, p["y"]), pt(x2 - dx, q["y"]), pt(x2, q["y"]))
-            cv.create_line(
-                *_bezier(*ctrl), width=2.4 if hot else 1.5,
-                fill=self._col("accent" if hot else "edge"), dash=(5, 5) if style else (),
+            item = cv.create_line(
+                *(c for x, y in chamfer(route, CORNER) for c in pt(x, y)),
+                width=2.4 if hot else 1.5, fill=self._col("accent" if hot else "edge"),
+                dash=(5, 4) if dashed else (), arrow=tk.LAST,
+                arrowshape=(7 * s + 2, 8.5 * s + 2, 3.5 * s + 1), capstyle=tk.BUTT,
+                joinstyle=tk.MITER,
             )  # fmt: skip
+            if hot:
+                hot_edges.append(item)
+        for item in hot_edges:  # running inputs on top of crossing edges
+            cv.tag_raise(item)
         # nodes
         self.halos = {}
         for nid, n in NODES.items():
@@ -557,15 +629,18 @@ class MonitorApp(ctk.CTk):
                     return
 
     def _focus(self, nid: str) -> None:
-        self.selected = nid
+        """Select a phase (graph node or side-panel row): expands its steps; again = collapse."""
+        if nid not in self.rows:  # state nodes
+            return
+        self.selected = None if self.selected == nid else nid
+        if self.data:
+            self._update_rows()
         self._draw_graph()
-        row = self.rows[nid]
-        self.update_idletasks()
-        inner = row.master
-        total = max(inner.winfo_height(), 1)
-        self.list._parent_canvas.yview_moveto(max(0.0, (row.winfo_y() - 40) / total))
-        row.configure(border_color=C["state"], border_width=3)
-        self.after(1200, lambda: self.data and self._update_rows())
+        if self.selected:
+            row = self.rows[nid]
+            self.update_idletasks()
+            total = max(row.master.winfo_height(), 1)
+            self.list._parent_canvas.yview_moveto(max(0.0, (row.winfo_y() - 40) / total))
 
 
 def run(workspace: Path, scene: str | None) -> None:

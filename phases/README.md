@@ -38,34 +38,43 @@ flowchart LR
     P00 --> P01[01 SfM]
     P00 --> P04[04 Tagovanie]
     P01 --> P02[02 Rekonštrukcia 3DGS]
-    P00 --> P02
     P02 --> P03[03 Refinement]
     P01 --> P03
     P04 --> P05[05 Segmentácia]
-    P00 --> P05
-    P01 -.poradie snímok.-> P05
+    P01 --> P05
     P05 --> P06[06 Embeddingy]
+    P01 --> P06
+    P04 -.voliteľne.-> P06
     P03 --> P07[07 Lifting]
     P01 --> P07
     P05 --> P07
     P06 --> P07
     P07 --> P08[08 Scene graph]
     P03 --> P08
+    P01 --> P08
+    P04 --> P08
+    P05 --> P08
     P08 --> S0[(state/v000)]
 
     PR[prompt] --> P09[09 Parsovanie]
     S0 --> P09
     P09 --> P10[10 Grounding]
     S0 --> P10
+    P01 --> P10
     P10 --> P11[11 Generovanie objektu]
     P10 --> P12[12 Úprava]
     P11 --> P12
     S0 --> P12
+    P01 --> P12
     P12 --> S1[(state/v001)]
     S1 --> P13[13 Renderovanie]
+    P01 --> P13
 ```
 
-Fázy 04 → 05 → 06 nezávisia od 02 a 03, dajú sa teda spustiť paralelne s tréningom gaussiánov.
+Šípka znamená, že fáza číta súbory zdrojovej fázy (pri 00–08 podľa metódy `inputs()` v kóde,
+pri 09–13 podľa špecifikácie). Fázy 02–08 aj edit loop čítajú snímky po undistorcii
+(`01_sfm/images_undistorted/`), nie snímky z 00. Fázy 04 → 05 → 06 nezávisia od 02 a 03,
+dajú sa teda spustiť paralelne s tréningom gaussiánov.
 
 ## Stav scény
 

@@ -1,5 +1,6 @@
 """Progress reporting (core/progress.py, Phase.execute) and the monitor's status reader."""
 
+import itertools
 import json
 import time
 from datetime import UTC, datetime, timedelta
@@ -188,8 +189,56 @@ def test_window_smoke(tmp_path):
         done = app.rows["00_ingest"]
         assert done.badge.cget("text") == "1 min 12 s" and done.times.cget("text") == ""
         app._focus("02_reconstruction")
+        # a finished phase without its own steps and a phase that never ran: planned steps
+        app._focus("00_ingest")
+        app.update()
+        assert done.expanded and not row.expanded
+        marks = [label.cget("text")[0] for label in done.step_labels]
+        assert marks and set(marks) == {"✓"}
+        app._focus("01_sfm")
+        app.update()
+        marks = [label.cget("text")[0] for label in app.rows["01_sfm"].step_labels]
+        assert marks and set(marks) == {"○"}
+        app._focus("01_sfm")  # second click collapses
+        assert app.selected is None and not app.rows["01_sfm"].expanded
     finally:
         app.destroy()
+
+
+def test_graph_edges_are_orthogonal_with_45_degree_corners():
+    from scenepipe.monitor.app import CORNER, EDGES, NH, NODES, NW, chamfer
+
+    def border(nid, x, y):
+        n = NODES[nid]
+        w = n.get("w", NW)
+        x0, x1, y0, y1 = n["x"] - w / 2, n["x"] + w / 2, n["y"] - NH / 2, n["y"] + NH / 2
+        on_x = x in (x0, x1) and y0 <= y <= y1
+        on_y = y in (y0, y1) and x0 <= x <= x1
+        return on_x or on_y
+
+    for a, b, route, _dashed in EDGES:
+        assert border(a, *route[0]) and border(b, *route[-1]), (a, b)
+        for (x0, y0), (x1, y1) in itertools.pairwise(route):
+            assert x0 == x1 or y0 == y1, (a, b)
+        line = chamfer(route, CORNER)
+        for (x0, y0), (x1, y1) in itertools.pairwise(line):
+            dx, dy = abs(x1 - x0), abs(y1 - y0)
+            assert dx < 1e-9 or dy < 1e-9 or abs(dx - dy) < 1e-9, (a, b)
+
+
+def test_planned_steps(tmp_path):
+    from scenepipe.monitor import status
+
+    status._PLANNED.clear()
+    steps, note = status.planned_steps(tmp_path, "00_ingest", "default")
+    assert steps[-1] == "validácia" and "default" in note
+    steps, note = status.planned_steps(tmp_path, "09_prompt_parsing", "default")
+    assert steps == [] and "nie je implementovaná" in note
+    # implementation not importable here: steps of the latest run of the same impl
+    write_progress(tmp_path / "a" / "04_tagging", "done", 1.0, NOW, NOW, ["x", "validácia"])
+    assert status._last_run_steps(tmp_path, "04_tagging", "x") == (["x", "validácia"], "a")
+    assert status._last_run_steps(tmp_path, "04_tagging", "ram_plus") is None
+    status._PLANNED.clear()
 
 
 def test_stop_is_recorded(tmp_path):

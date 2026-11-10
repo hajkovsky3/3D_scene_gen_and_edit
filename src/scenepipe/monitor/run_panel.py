@@ -178,6 +178,10 @@ class RunPanel(ctk.CTkFrame):
 
     # --- run ------------------------------------------------------------------------------
 
+    def selected_profile(self) -> str:
+        """Profile chosen in the run form (also used to show planned steps of phases)."""
+        return self._profile_name()
+
     def _profile_name(self) -> str:
         label = self.profile.get()
         return next((p for p in self.profile_names if PROFILE_LABELS.get(p, p) == label), label)
