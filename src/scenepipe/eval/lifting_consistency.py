@@ -10,7 +10,7 @@ The masks were inputs of 07, so this measures how faithfully the lifting reprodu
 Needs CUDA (gsplat). Environment `sp-gs`.
 
     python -m scenepipe.eval.lifting_consistency --scene m360_counter
-    python -m scenepipe.eval.lifting_consistency --scene m360_counter --lifting _cmp_07_baseline
+    python -m scenepipe.eval.lifting_consistency --scene m360_counter --lifting 07_lifting/_cmp/baseline
 """
 
 from __future__ import annotations

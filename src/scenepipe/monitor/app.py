@@ -101,7 +101,7 @@ EDGES: list[tuple[str, str, list[tuple[float, float]], bool]] = [
     ("03_refinement", "07_lifting", [(715, 100), (730, 100), (730, 160), (745, 160)], False),
     ("03_refinement", "08_scene_graph", [(680, 70), (680, 36), (1020, 36), (1020, 145)], False),
     ("04_tagging", "05_segmentation", [(355, 250), (385, 250)], False),
-    ("04_tagging", "06_mask_embedding", [(260, 280), (260, 314), (600, 314), (600, 280)], True),
+    ("04_tagging", "06_mask_embedding", [(260, 280), (260, 314), (600, 314), (600, 280)], False),
     ("04_tagging", "08_scene_graph", [(260, 280), (260, 314), (1020, 314), (1020, 205)], False),
     ("05_segmentation", "06_mask_embedding", [(535, 250), (565, 250)], False),
     ("05_segmentation", "07_lifting", [(460, 280), (460, 298), (840, 298), (840, 205)], False),

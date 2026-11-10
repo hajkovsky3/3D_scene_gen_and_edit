@@ -44,7 +44,7 @@ flowchart LR
     P01 --> P05
     P05 --> P06[06 Embeddingy]
     P01 --> P06
-    P04 -.voliteľne.-> P06
+    P04 --> P06
     P03 --> P07[07 Lifting]
     P01 --> P07
     P05 --> P07

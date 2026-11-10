@@ -24,6 +24,10 @@ workspace/<scene_id>/
 
 - `scene_id`: `[a-z0-9_-]+`.
 - Každá fáza zapisuje **iba** do svojho adresára (výnimka: fáza 12 vytvára nový `state/vNNN/`).
+- `XX_faza/_cmp/<variant>/` sú odložené kópie výstupov fázy z porovnaní variantov (ablácie,
+  alternatívne implementácie), podklad pre čísla v sekcii Stav príslušného `phases/XX_*.md`.
+  Reťazec ich nečíta a nový beh fázy ich nemaže. `manifest.json` v nich má cesty z pôvodného
+  umiestnenia.
 - Všetky cesty vo výstupoch a manifestoch sú relatívne k `workspace/<scene_id>/`.
 
 ## 2. Manifest fázy
