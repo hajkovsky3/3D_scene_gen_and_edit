@@ -30,13 +30,16 @@ CROP_STRATEGIES = ("bbox", "masked", "multi")
 
 class MaskEmbeddingBase(Phase):
     phase = "06_mask_embedding"
-    contract_version = 1
+    contract_version = 2
     defaults: ClassVar[dict[str, Any]] = {
         "crop_strategy": "multi",  # bbox | masked | multi (mean of both)
         "bbox_padding": 0.15,  # context around the bbox, share of its longer side per edge
         "masked_padding": 0.05,
         "mask_background": "gray",  # gray | blur: what replaces pixels outside the mask
         "min_crop_px": 32,  # masks whose bbox is smaller on both sides are skipped
+        # at most this many masks of one track get an embedding (0 = all): 07 averages them
+        # into one feature per track anyway; picked evenly along the track, best in each part
+        "max_masks_per_track": 0,
         "batch_size": 16,
         "compute_label_scores": True,
         "text_template": "a photo of a {}",
@@ -108,13 +111,18 @@ class MaskEmbeddingBase(Phase):
         for d in doc["detections"]:
             by_frame.setdefault(d["frame_id"], []).append(d)
         min_px = int(cfg["min_crop_px"])
-        mask_ids, skipped = [], []
+        large, skipped = [], []
         for d in doc["detections"]:
             x0, y0, x1, y1 = d["bbox_xyxy"]
-            (mask_ids if max(x1 - x0, y1 - y0) >= min_px else skipped).append(d["mask_id"])
+            (large if max(x1 - x0, y1 - y0) >= min_px else skipped).append(d)
+        chosen = set(sample_track_masks(large, doc["frames"], int(cfg["max_masks_per_track"])))
+        mask_ids = [d["mask_id"] for d in large if d["mask_id"] in chosen]
+        sampled_out = [d["mask_id"] for d in large if d["mask_id"] not in chosen]
+        skipped = [d["mask_id"] for d in skipped]
         row_of = {m: i for i, m in enumerate(mask_ids)}
-        log.info("%d masks (%d skipped as smaller than %d px), crops: %s",
-                 len(mask_ids), len(skipped), min_px, kinds)  # fmt: skip
+        log.info("%d masks to embed (%d skipped as smaller than %d px, %d left out of tracks),"
+                 " crops: %s", len(mask_ids), len(skipped), min_px, len(sampled_out),
+                 kinds)  # fmt: skip
 
         self.progress.update(0.0, "načítanie modelu", "")
         t0 = time.perf_counter()
@@ -178,6 +186,7 @@ class MaskEmbeddingBase(Phase):
         outs["index"] = self.out_dir / "index.json"
         _write_json(outs["index"], {
             "contract_version": self.contract_version, "mask_ids": mask_ids, "skipped": skipped,
+            "sampled_out": sampled_out,
         })  # fmt: skip
         outs["meta"] = self.out_dir / "meta.json"
         _write_json(outs["meta"], {
@@ -187,7 +196,8 @@ class MaskEmbeddingBase(Phase):
         outs["report"] = self.out_dir / "report.json"
         _write_json(outs["report"], {
             "num_masks": len(doc["detections"]), "num_embedded": len(mask_ids),
-            "num_skipped": len(skipped), "num_frames": len(frames),
+            "num_skipped": len(skipped), "num_sampled_out": len(sampled_out),
+            "num_frames": len(frames),
             "crops_per_mask": len(kinds), "load_s": round(load_s, 1),
             "embedding_s": round(embed_s, 1), **label_report,
         })  # fmt: skip
@@ -241,12 +251,12 @@ class MaskEmbeddingBase(Phase):
         emb = np.load(outputs["embeddings"])
         if index.get("contract_version") != self.contract_version:
             raise ContractError(f"index.json contract_version {index.get('contract_version')!r}")
-        ids, skipped = index["mask_ids"], index["skipped"]
+        ids, skipped, out = index["mask_ids"], index["skipped"], index["sampled_out"]
         all_ids = [d["mask_id"] for d in self._detections()["detections"]]
-        if len(set(ids)) != len(ids) or set(ids) & set(skipped):
-            raise ContractError("mask_ids must be unique and disjoint from skipped")
-        if set(ids) | set(skipped) != set(all_ids):
-            raise ContractError("mask_ids + skipped must be exactly the masks of 05")
+        if len(ids) + len(skipped) + len(out) != len(set(ids) | set(skipped) | set(out)):
+            raise ContractError("mask_ids, skipped and sampled_out must be unique and disjoint")
+        if set(ids) | set(skipped) | set(out) != set(all_ids):
+            raise ContractError("mask_ids + skipped + sampled_out must be exactly the masks of 05")
         if emb.dtype != np.float16 or emb.ndim != 2 or emb.shape[0] != len(ids):
             raise ContractError(f"embeddings {emb.dtype}{list(emb.shape)}, {len(ids)} mask_ids")
         if meta.get("dim") != emb.shape[1] or meta.get("normalized") is not True:
@@ -304,6 +314,36 @@ def mask_background(crop: np.ndarray, mask: np.ndarray, mode: str) -> np.ndarray
 def resize_square(crop: np.ndarray, size: int) -> np.ndarray:
     interp = cv2.INTER_AREA if crop.shape[0] > size else cv2.INTER_CUBIC
     return cv2.resize(crop, (size, size), interpolation=interp)
+
+
+def sample_track_masks(dets: list[dict], frame_order: list[str], k: int) -> list[str]:
+    """Mask ids to embed: all masks without a track; of a track at most k (k <= 0: all).
+
+    The track (ordered by frame) is cut into k equal parts and the best mask of each part is
+    taken, so the picked views spread over the track. Best = mask_score x bbox area, halved
+    when the mask touches the image border (the object is cut off).
+    """
+    if k <= 0:
+        return [d["mask_id"] for d in dets]
+    pos = {f: i for i, f in enumerate(frame_order)}
+    out, tracks = [], {}
+    for d in dets:
+        if d["track_id"] is None:
+            out.append(d["mask_id"])
+        else:
+            tracks.setdefault(d["track_id"], []).append(d)
+
+    def quality(d: dict) -> float:
+        x0, y0, x1, y1 = d["bbox_xyxy"]
+        score = 1.0 if d["mask_score"] is None else float(d["mask_score"])
+        return score * (x1 - x0) * (y1 - y0) * (0.5 if d["touches_border"] else 1.0)
+
+    for members in tracks.values():
+        members.sort(key=lambda d: (pos.get(d["frame_id"], 0), d["mask_id"]))
+        n, m = len(members), min(k, len(members))
+        parts = [members[i * n // m : (i + 1) * n // m] for i in range(m)]
+        out += [max(part, key=quality)["mask_id"] for part in parts]
+    return out
 
 
 def l2_normalize(x: np.ndarray) -> np.ndarray:

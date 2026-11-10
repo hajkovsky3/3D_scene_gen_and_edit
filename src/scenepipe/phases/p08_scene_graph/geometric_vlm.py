@@ -28,12 +28,12 @@ import numpy as np
 from PIL import Image
 
 from scenepipe.core.masks import rle_decode
+from scenepipe.core.paths import checkpoint_path
 from scenepipe.core.phase import register
 from scenepipe.phases.p08_scene_graph.common import SceneGraphBase
 
 log = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
 FILL_GRAY = 127
 OUTLINE_RGB = (255, 0, 0)
 LABEL_CORRECTION = ("off", "vocabulary", "any")
@@ -116,7 +116,7 @@ class SceneGraphGeometricVlm(SceneGraphBase):
             )  # fmt: skip
         elif quant == "8bit":
             kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
-        cache = REPO_ROOT / cfg["model_dir"]
+        cache = checkpoint_path(cfg["model_dir"])
         self._proc = AutoProcessor.from_pretrained(cfg["vlm"], cache_dir=cache)
         self._proc.tokenizer.padding_side = "left"  # batched generation
         self._model = AutoModelForImageTextToText.from_pretrained(

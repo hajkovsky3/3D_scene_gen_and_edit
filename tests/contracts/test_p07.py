@@ -100,7 +100,7 @@ def make_ws(tmp_path: Path) -> Workspace:
     emb_dir.mkdir()
     ids = list(MASKS)
     np.save(emb_dir / "embeddings.npy", np.eye(4, dtype=np.float16)[[MASKS[m][3] for m in ids]])
-    index = {"contract_version": 1, "mask_ids": ids, "skipped": []}
+    index = {"contract_version": 2, "mask_ids": ids, "skipped": [], "sampled_out": []}
     (emb_dir / "index.json").write_text(json.dumps(index), encoding="utf-8")
     meta = {"model": "fake", "dim": 4, "normalized": True}
     (emb_dir / "meta.json").write_text(json.dumps(meta), encoding="utf-8")

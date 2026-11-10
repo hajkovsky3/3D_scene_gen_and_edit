@@ -268,9 +268,11 @@ class RunPanel(ctk.CTkFrame):
         elif run is None:
             self.status.configure(text="Vyber vstup a spusti build.", text_color=C["muted"])
         else:
-            phase = f"\n{run.current[:2]} {NAMES[run.current]} ({run.message})" if (
-                running and run.current
-            ) else f"\n{run.message}"  # fmt: skip
+            if running and run.active:
+                names = " + ".join(f"{p[:2]} {NAMES[p]}" for p in run.active)
+                phase = f"\n{names} ({run.message})"
+            else:
+                phase = f"\n{run.message}"
             self.status.configure(
                 text=f"{run.scene}: {RUN_TEXT[run.state]}{phase}",
                 text_color=C[RUN_COLOR[run.state]],

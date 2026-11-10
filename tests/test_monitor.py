@@ -206,6 +206,7 @@ def test_window_smoke(tmp_path):
 
 
 def test_graph_edges_are_orthogonal_with_45_degree_corners():
+    pytest.importorskip("tkinter")  # the monitor module imports tkinter (absent in WSL envs)
     from scenepipe.monitor.app import CORNER, EDGES, NH, NODES, NW, chamfer
 
     def border(nid, x, y):
@@ -315,3 +316,42 @@ def test_runner_commands_and_pipeline(tmp_path):
     slow.stop()
     slow.join(30)
     assert slow.state == "stopped"
+
+
+def test_pipeline_runs_independent_phases_in_parallel(tmp_path):
+    from scenepipe.monitor.runner import PHASE_DEPS, PipelineRun, Runners
+
+    # every dependency is an earlier build phase (the scheduler never waits forever)
+    order = list(PHASE_DEPS)
+    assert all(order.index(d) < order.index(p) for p, deps in PHASE_DEPS.items() for d in deps)
+
+    fake = Runners({"local": {"command": ["{python}", "-c", "import time; time.sleep(1.5)"]}}, {})
+    phases = ["00_ingest", "01_sfm", "04_tagging"]
+    run = PipelineRun("room", phases, "fast", tmp_path, fake, max_parallel=2)
+    assert run.ready(phases, set()) == ["00_ingest"]
+    assert run.ready(["01_sfm", "04_tagging"], {"00_ingest"}) == ["01_sfm", "04_tagging"]
+    # a dependency outside the run counts as done (its outputs are on disk)
+    assert run.ready(["05_segmentation"], set()) == []
+    assert PipelineRun("r", ["05_segmentation"], "fast", tmp_path, fake).ready(
+        ["05_segmentation"], set()
+    ) == ["05_segmentation"]
+    seen = set()
+    run.start()
+    for _ in range(200):
+        seen.add(tuple(sorted(run.active)))
+        if run.state != "running":
+            break
+        time.sleep(0.05)
+    run.join(30)
+    assert run.state == "done" and sorted(run.done) == sorted(phases)
+    assert ("01_sfm", "04_tagging") in seen  # both ran at once
+
+    one = PipelineRun("room", phases, "fast", tmp_path, fake, max_parallel=1)
+    one.start()
+    for _ in range(200):
+        assert len(one.active) <= 1
+        if one.state != "running":
+            break
+        time.sleep(0.05)
+    one.join(30)
+    assert one.state == "done"

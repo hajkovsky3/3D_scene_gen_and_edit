@@ -8,17 +8,15 @@ Spec: phases/06_mask_embedding.md
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any, ClassVar
 
 import numpy as np
 
+from scenepipe.core.paths import checkpoint_path
 from scenepipe.core.phase import register
 from scenepipe.phases.p06_mask_embedding.common import MaskEmbeddingBase
 
 log = logging.getLogger(__name__)
-
-REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 @register
@@ -49,7 +47,7 @@ class MaskEmbeddingOpenClip(MaskEmbeddingBase):
         text_dev = cfg["text_device"] if cfg["text_device"] != "auto" else dev
         self._dev, self._text_dev = dev, text_dev
         self._dtype = torch.float16 if cfg["fp16"] and dev == "cuda" else torch.float32
-        cache = REPO_ROOT / cfg["model_dir"]
+        cache = checkpoint_path(cfg["model_dir"])
         self._proc = AutoProcessor.from_pretrained(cfg["model"], cache_dir=cache)
         model = AutoModel.from_pretrained(cfg["model"], cache_dir=cache).eval()
         # the towers are independent modules: image tower on `device`, text tower (fp32

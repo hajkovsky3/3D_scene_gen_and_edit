@@ -140,7 +140,7 @@ masky fragmentu pripoja k inštancii, ktorá má aspoň `fragment_attach_share` 
   `zero_shot_weight`); váha masky = `Σ_i W_i(m)` × kvalita, normalizované, top 5.
 - `instance_features`: vážený priemer embeddingov zdrojových masiek (váha = `Σ_i W_i(m)` × kvalita),
   v druhom prechode bez embeddingov s kosínusovou podobnosťou k prvému priemeru pod
-  `feature_min_sim`, L2 normalizácia. Masky vynechané v 06 (`skipped`) sa nepočítajú.
+  `feature_min_sim`, L2 normalizácia. Masky bez embeddingu v 06 (`skipped`, `sampled_out`) sa nepočítajú.
 
 Kvalita masky `q(m)` = `mask_score` × (`border_penalty`, ak sa dotýka okraja snímky).
 

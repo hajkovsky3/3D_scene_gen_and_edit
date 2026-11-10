@@ -88,3 +88,18 @@ pip install bitsandbytes accelerate
 python -c "from huggingface_hub import snapshot_download as d; d('Qwen/Qwen3-VL-4B-Instruct', cache_dir='checkpoints/huggingface', allow_patterns=['*.json', '*.safetensors', '*.txt', '*.jinja', 'LICENSE*', 'README.md'])"
 HF_HUB_OFFLINE=1 python -m scenepipe run 08_scene_graph --scene room
 ```
+
+### Váhy modelov na disku WSL (rýchlejšie načítanie)
+
+WSL číta súbory z Windows disku (`/mnt/c`) pomaly; načítanie modelov (RAM++, Grounding DINO,
+SAM 2, OpenCLIP, Qwen3-VL) tak trvá desiatky sekúnd na fázu. Kópia váh na disku WSL sa načíta
+rýchlejšie. Konfigurácie ďalej uvádzajú `checkpoints/...`; ak je nastavená premenná
+`SCENEPIPE_CHECKPOINTS`, tieto cesty sa hľadajú v nej (`src/scenepipe/core/paths.py`).
+
+```bash
+rsync -a /mnt/c/Users/<user>/Documents/3D_scene_gen_and_edit/checkpoints/ ~/checkpoints/
+echo 'export SCENEPIPE_CHECKPOINTS=~/checkpoints' >> ~/sp-gs.sh
+```
+
+Po stiahnutí nového modelu do `checkpoints/` treba `rsync` zopakovať (alebo sťahovať rovno
+do `~/checkpoints`). Bez premennej sa používa `checkpoints/` v repozitári ako doteraz.

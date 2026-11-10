@@ -142,6 +142,7 @@ mask_embedding:
   masked_padding: 0.05
   mask_background: gray     # gray | blur: čím nahradiť pixely mimo masky
   min_crop_px: 32           # menšie masky sa vynechajú (index.json: skipped)
+  max_masks_per_track: 0      # 0 = všetky masky tracku; k = k masiek rovnomerne po tracku
   batch_size: 16            # fp32 ViT-H: väčšia dávka na 4 GB GPU pretečie do RAM (rýchlosť sa nezvýši)
   compute_label_scores: true
   text_template: "a photo of a {}"

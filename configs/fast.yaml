@@ -29,6 +29,8 @@ segmentation:
 # --- 06_mask_embedding ---
 mask_embedding:
   crop_strategy: masked     # polovičný čas, rovnaké IoU v 07, zero-shot 40 % vs. 44 %
+  max_masks_per_track: 3    # room: embedding 509 s → 153 s, IoU v 07 0,606 → 0,604
+  model: laion/CLIP-ViT-L-14-laion2B-s32B-b82K  # s 3 maskami 50 s, IoU 0,617, zero-shot 58 % → 54 %
 
 # --- 07_lifting ---
 lifting:

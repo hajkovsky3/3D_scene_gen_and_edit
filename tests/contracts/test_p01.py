@@ -9,13 +9,14 @@ from synthetic_room import build_room, orbit_cameras, render
 
 pycolmap = pytest.importorskip("pycolmap")  # environment sp-core
 
+from scenepipe.core.paths import checkpoint_path
 from scenepipe.core.workspace import Workspace
 from scenepipe.phases.p01_sfm.align import (
     compute_alignment,
     floor_plane,
     rotation_between,
 )
-from scenepipe.phases.p01_sfm.colmap import REPO_ROOT, SfmColmap
+from scenepipe.phases.p01_sfm.colmap import SfmColmap
 from scenepipe.phases.p01_sfm.retrieval import bow_similarity, select_pairs
 from scenepipe.phases.p01_sfm.torch_match import sift_lightglue_inputs
 
@@ -163,7 +164,7 @@ def test_unsupported_features(tmp_path):
 def test_lightglue_backend_cpu(tmp_path):
     """SIFT + LightGlue on the CPU (use_gpu: false), needs kornia and the local weights."""
     pytest.importorskip("kornia")
-    if not (REPO_ROOT / SfmColmap.defaults["lightglue_weights"]).is_file():
+    if not checkpoint_path(SfmColmap.defaults["lightglue_weights"]).is_file():
         pytest.skip("LightGlue weights not downloaded (phases/01_sfm.md)")
     ws = Workspace.open(tmp_path, "room")
     gt = orbit_cameras(15)

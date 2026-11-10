@@ -146,7 +146,9 @@ Okno má tri časti:
 
 Ktorá fáza beží v ktorom Python prostredí (napr. 02 vo WSL), je v `configs/local.yaml`
 (necommituje sa; vzor `configs/local.example.yaml`). Bez neho bežia všetky fázy v aktuálnom
-Pythone. Priebeh sa číta zo súborov `progress.json`, `manifest.json` a `report.json`, takže
+Pythone. Kľúč `max_parallel` v tom istom súbore určuje, koľko fáz smie bežať naraz (nezávislé
+vetvy 04 → 05 → 06 popri 02 → 03). Na GTX 1650 je nastavený na 1, pretože súbežné fázy zaplnia
+4 GB VRAM a 12 GB RAM pre WSL; vyššie číslo má zmysel na silnejšej GPU. Priebeh sa číta zo súborov `progress.json`, `manifest.json` a `report.json`, takže
 okno ukazuje aj fázy spustené inak (z príkazového riadka, na inom stroji so zdieľaným diskom).
 
 Jednu fázu spustíš aj bez okna: `python -m scenepipe run 02_reconstruction --scene izba --profile fast`.

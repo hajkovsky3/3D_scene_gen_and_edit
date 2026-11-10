@@ -13,9 +13,9 @@ if not torch.cuda.is_available():
     pytest.skip("02_reconstruction needs a CUDA GPU", allow_module_level=True)
 
 from scenepipe.core.gaussians import PLY_PROPERTIES, read_ply
+from scenepipe.core.paths import checkpoint_path
 from scenepipe.core.workspace import Workspace
 from scenepipe.phases.p02_reconstruction.gsplat import (
-    REPO_ROOT,
     ReconstructionGsplat,
     split_views,
 )
@@ -92,7 +92,7 @@ def test_default_strategy_low_res(tmp_path):
 
 def test_depth_prior_short_run(tmp_path):
     pytest.importorskip("transformers")
-    model_dir = REPO_ROOT / "checkpoints" / "huggingface"
+    model_dir = checkpoint_path("checkpoints/huggingface")
     if not (model_dir / "models--depth-anything--Depth-Anything-V2-Small-hf").is_dir():
         pytest.skip("Depth Anything V2 Small not downloaded (see docs/licenses.md)")
     ws = Workspace.open(tmp_path, "room")

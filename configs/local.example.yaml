@@ -16,6 +16,11 @@ runners:
               "source ~/sp-gs.sh && python -m scenepipe {args}"]
     stop: ["wsl.exe", "-d", "Ubuntu", "--", "pkill", "-f", "scenepipe run {phase} --scene {scene}"]
 
+# Koľko fáz smie bežať naraz (nezávislé vetvy, napr. 04 → 05 → 06 popri 02 → 03).
+# Všetky GPU fázy sa delia o jednu GPU; 1 = jedna fáza po druhej. Na GTX 1650 (4 GB) a 12 GB RAM
+# pre WSL súbežný beh nepomáha: 02 + 05 zaplnia VRAM, tréning je ~2,5× pomalší a dôjde RAM.
+max_parallel: 1
+
 phases:
   default: local
   01_sfm: wsl_gs              # párovanie na GPU (PyTorch v sp-gs)

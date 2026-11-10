@@ -18,20 +18,19 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, ClassVar
 
 import numpy as np
 from PIL import Image
 
 from scenepipe.core.masks import mask_bbox
+from scenepipe.core.paths import checkpoint_path
 from scenepipe.core.phase import register
 from scenepipe.core.progress import StageProgress
 from scenepipe.phases.p05_segmentation.common import FrameRef, RawMask, SegmentationBase
 
 log = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
 DETECT_SHARE = 0.3  # share of segment() progress taken by detection when tracking
 
 
@@ -98,7 +97,7 @@ class SegmentationGdinoSam2(SegmentationBase):
         from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
 
         cfg = self.config
-        cache = REPO_ROOT / cfg["model_dir"]
+        cache = checkpoint_path(cfg["model_dir"])
         self.progress.update(stage.lo, "detekcia", "Grounding DINO")
         proc = AutoProcessor.from_pretrained(cfg["gdino_model"], cache_dir=cache)
         model = AutoModelForZeroShotObjectDetection.from_pretrained(
@@ -139,7 +138,7 @@ class SegmentationGdinoSam2(SegmentationBase):
         from transformers import Sam2VideoModel, Sam2VideoProcessor
 
         cfg = self.config
-        cache = REPO_ROOT / cfg["model_dir"]
+        cache = checkpoint_path(cfg["model_dir"])
         self.progress.update(stage.lo, "segmentácia", "SAM 2")
         proc = Sam2VideoProcessor.from_pretrained(cfg["sam2_model"], cache_dir=cache)
         model = Sam2VideoModel.from_pretrained(cfg["sam2_model"], cache_dir=cache)

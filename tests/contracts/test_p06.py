@@ -111,8 +111,9 @@ def test_contract(tmp_path):
     out = ws.root / "06_mask_embedding"
     index = json.loads((out / "index.json").read_text("utf-8"))
     assert index == {
-        "contract_version": 1, "mask_ids": ["f000001_m000", "f000002_m000"],
+        "contract_version": 2, "mask_ids": ["f000001_m000", "f000002_m000"],
         "skipped": ["f000002_m001"],  # 8 x 8 px < min_crop_px
+        "sampled_out": [],
     }  # fmt: skip
     assert MaskEmbeddingFake.encoded == 4  # 2 masks x (bbox + masked)
     emb = np.load(out / "embeddings.npy")
@@ -170,3 +171,35 @@ def test_crop_helpers():
     g = mask_background(crop, m, "gray")
     assert g[0, 0, 0] == FILL_GRAY and g[1, 1, 0] == 200
     assert mask_background(crop, m, "blur")[1, 1, 0] == 200
+
+
+def test_sample_track_masks_spreads_along_the_track():
+    from scenepipe.phases.p06_mask_embedding.common import sample_track_masks
+
+    frames = [f"f{i:06d}" for i in range(9)]
+
+    def det(i, track, score=0.9, border=False, side=40):
+        return {"mask_id": f"{frames[i]}_m{0 if track else 1}", "frame_id": frames[i],
+                "track_id": track, "mask_score": score, "touches_border": border,
+                "bbox_xyxy": [0, 0, side, side]}  # fmt: skip
+
+    dets = [det(i, "t1", score=0.5 + 0.05 * i) for i in range(9)] + [det(4, None)]
+    assert len(sample_track_masks(dets, frames, 0)) == 10  # 0 = all
+    # three parts of the track (frames 0-2, 3-5, 6-8): the best of each = the last frame
+    picked = sample_track_masks(dets, frames, 3)
+    assert sorted(picked) == ["f000002_m0", "f000004_m1", "f000005_m0", "f000008_m0"]
+    dets[8] = det(8, "t1", score=1.0, border=True)  # cut off by the border: halved
+    assert "f000007_m0" in sample_track_masks(dets, frames, 3)
+    assert len(sample_track_masks(dets[:2], frames, 5)) == 2  # short track: all of it
+
+
+def test_max_masks_per_track_in_index(tmp_path):
+    ws = make_ws(tmp_path)
+    doc_path = ws.root / "05_segmentation" / "detections.json"
+    doc = json.loads(doc_path.read_text("utf-8"))
+    for d in doc["detections"]:
+        d["track_id"] = "t1"  # one track over both frames
+    doc_path.write_text(json.dumps(doc), encoding="utf-8")
+    MaskEmbeddingFake(ws, {"max_masks_per_track": 1, "min_crop_px": 1}).execute()
+    index = json.loads((ws.root / "06_mask_embedding" / "index.json").read_text("utf-8"))
+    assert len(index["mask_ids"]) == 1 and len(index["sampled_out"]) == 2

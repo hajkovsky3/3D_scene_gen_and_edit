@@ -17,9 +17,10 @@ from typing import Any, ClassVar
 import numpy as np
 from PIL import Image
 
+from scenepipe.core.paths import checkpoint_path
 from scenepipe.core.phase import register
 from scenepipe.core.progress import StageProgress
-from scenepipe.phases.p04_tagging.common import TaggingBase, _repo_path
+from scenepipe.phases.p04_tagging.common import TaggingBase
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ class TaggingRamPlus(TaggingBase):
         cfg = self.config
         # model files live outside the workspace, so they are not manifest inputs
         for key in ("checkpoint", "tokenizer_dir"):
-            if not _repo_path(cfg[key]).exists():
+            if not checkpoint_path(cfg[key]).exists():
                 raise FileNotFoundError(f"{key}: {cfg[key]} not found (phases/04_tagging.md)")
         dev = cfg["device"]
         if dev == "auto":
@@ -64,7 +65,7 @@ class TaggingRamPlus(TaggingBase):
         load_share = 0.3
         self.progress.update(stage.lo, "načítanie modelu", "RAM++ Swin-L")
         model = load_model(
-            _repo_path(cfg["checkpoint"]), _repo_path(cfg["tokenizer_dir"]), dev, half
+            checkpoint_path(cfg["checkpoint"]), checkpoint_path(cfg["tokenizer_dir"]), dev, half
         )
         tag_list = [str(t) for t in model.tag_list]
         thr = np.full(len(tag_list), float(cfg["score_threshold"]), np.float32)

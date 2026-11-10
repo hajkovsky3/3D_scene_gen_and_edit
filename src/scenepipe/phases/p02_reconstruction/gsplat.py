@@ -24,12 +24,12 @@ from scenepipe.core.cameras import Camera, load_cameras, scene_scale
 from scenepipe.core.gaussians import Gaussians, read_ply, rgb_to_sh_dc, write_ply
 from scenepipe.core.images import load_image
 from scenepipe.core.metrics import Lpips, psnr, ssim, ssim_shifted
+from scenepipe.core.paths import checkpoint_path
 from scenepipe.core.phase import ContractError, Phase, register
 from scenepipe.core.render import from_params, render, to_params
 
 log = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
 REFERENCE_ITERATIONS = 30_000  # strategy schedules below are tuned for this many steps
 SSIM_LAMBDA = 0.2
 SH_DEGREE_INTERVAL = 1000
@@ -259,7 +259,7 @@ class ReconstructionGsplat(Phase):
         from transformers import AutoImageProcessor, AutoModelForDepthEstimation
 
         name = self.config["depth_model"]
-        cache = REPO_ROOT / self.config["depth_model_dir"]
+        cache = checkpoint_path(self.config["depth_model_dir"])
         processor = AutoImageProcessor.from_pretrained(name, cache_dir=cache)
         model = AutoModelForDepthEstimation.from_pretrained(name, cache_dir=cache).cuda().eval()
         out = {}

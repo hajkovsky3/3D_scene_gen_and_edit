@@ -329,6 +329,12 @@ labelu). `geometric_only` beží v ľubovoľnom prostredí s numpy (bez torch a 
   of wood“ pri vankúši), mýli si objekty (reproduktor ako „camera“ či „television“) a nevie
   opraviť label. Ako primárna ostáva `geometric_vlm`; `florence` sa hodí na rýchly náhľad.
 
+- [x] menší VLM Qwen3-VL-2B (`--set vlm=Qwen/Qwen3-VL-2B-Instruct`) na *room* (2026-11-10,
+  GTX 1650, 4-bit, rovnaký vstup z 07): popis 43 uzlov 267 s namiesto 489 s, captions
+  použiteľné, ale **žiadna** oprava labelu (4B: 8, napr. dva gauče označené
+  *entertainment center* → *sofa*) a v popisoch sa objavuje zvýraznenie výrezu („red outline“).
+  Labely grafu sú vstupom edit loopu, preto profil `fast` ostáva na 4B; 2B je len voľba.
+
 ## Zdroje
 
 - Gu et al.: ConceptGraphs: Open-Vocabulary 3D Scene Graphs for Perception and Planning, ICRA 2024.

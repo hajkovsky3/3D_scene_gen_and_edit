@@ -1,6 +1,6 @@
 # Fáza 06: Embeddingy masiek
 
-`contract_version: 1`
+`contract_version: 2` (2: zoznam `sampled_out` v `index.json`)
 
 ## Účel
 
@@ -19,9 +19,11 @@ Oddelené od 05, aby sa dal vymeniť model embeddingov bez novej segmentácie.
 
 **Výstup** (`06_mask_embedding/`)
 - `embeddings.npy` — `float16[M, D]`, L2-normalizované.
-- `index.json` — `{"contract_version": 1, "mask_ids": ["f000001_m000", …], "skipped": […]}`;
-  riadok i v `.npy` patrí `mask_ids[i]`; `skipped` sú masky bez embeddingu (príliš malé).
-  `mask_ids` + `skipped` sú presne všetky masky z 05.
+- `index.json` — `{"contract_version": 2, "mask_ids": ["f000001_m000", …], "skipped": […],
+  "sampled_out": […]}`; riadok i v `.npy` patrí `mask_ids[i]`; `skipped` sú masky bez
+  embeddingu, lebo sú príliš malé; `sampled_out` sú masky trackov vynechané výberom
+  `max_masks_per_track` (prázdne pri 0). `mask_ids` + `skipped` + `sampled_out` sú presne
+  všetky masky z 05, navzájom disjunktné. Masky bez embeddingu nemajú ani `label_scores`.
 - `meta.json` — `{"model": "hf:laion/CLIP-ViT-H-14-laion2B-s32B-b79K", "dim": 1024,
   "normalized": true, "crop_strategy": "multi", "text_template": "a photo of a {}"}`.
   `model` určuje váhy; fáza 10 načíta pre text ten istý model.
@@ -75,6 +77,7 @@ mask_embedding:
   masked_padding: 0.05
   mask_background: gray     # gray | blur
   min_crop_px: 32
+  max_masks_per_track: 0    # 0 = všetky; inak k masiek na track rovnomerne po tracku
   batch_size: 16
   compute_label_scores: true
   text_template: "a photo of a {}"
@@ -147,6 +150,26 @@ za ~1 s). Beží v `sp-gs` vo WSL (transformers už sú tam kvôli 05).
   Výrez s pozadím mimo masky je pre spájanie inštancií rovnako dobrý ako oba výrezy spolu
   za polovičný čas; kontext z `bbox` pridáva hlavne zero-shot presnosť. Profil `fast`
   používa `masked`.
+
+- [x] výber masiek na track (`max_masks_per_track`) a menší model pre profil `fast`, ablácia na
+  *room* (2026-11-10, GTX 1650 vo WSL, váhy z disku WSL; vstup: build s profilom `fast`,
+  1 323 masiek, 153 trackov, výrez `masked`; 07 `gsplat_vote`, IoU podľa
+  `scenepipe.eval.lifting_consistency`):
+
+  | Variant | Embeddingov | Čas embeddingov | Zero-shot zhoda | IoU 07 (priemer / medián) | Inštancie 07 |
+  |---|---|---|---|---|---|
+  | ViT-H, všetky masky (`default`) | 1 323 | 509 s | 57,7 % | 0,606 / 0,711 | 43 |
+  | ViT-H, 3 na track | 393 | 153 s | 56,2 % | 0,604 / 0,714 | 44 |
+  | ViT-H, 5 na track | 567 | 219 s | 56,3 % | 0,604 / 0,714 | 44 |
+  | ViT-L, všetky masky | 1 323 | 158 s | 54,4 % | 0,617 / 0,739 | 42 |
+  | **ViT-L, 3 na track (`fast`)** | 393 | **50 s** | 53,7 % | **0,617 / 0,739** | 42 |
+
+  Embedding tracku je priemer jeho masiek; 3 rovnomerne vybrané masky ho odhadnú takmer
+  rovnako, takže spájanie v 07 sa nezmení. ViT-L (`laion/CLIP-ViT-L-14-laion2B-s32B-b82K`,
+  768 rozmerov) dal na *room* o niečo vyššie IoU a o 3–4 body nižšiu zero-shot zhodu; labely
+  inštancií v 07 aj počet opráv labelov v 08 (8) ostali rovnaké. Načítanie modelu z disku WSL
+  trvá 9–18 s namiesto 44 s. Prah `merge_sim` (0,75) bol kalibrovaný na ViT-H; na *room*
+  vyhovuje aj ViT-L, na iných scénach to treba overiť. Profil `fast` používa oboje.
 
 ## Zdroje
 

@@ -74,7 +74,8 @@ flowchart LR
 Šípka znamená, že fáza číta súbory zdrojovej fázy (pri 00–08 podľa metódy `inputs()` v kóde,
 pri 09–13 podľa špecifikácie). Fázy 02–08 aj edit loop čítajú snímky po undistorcii
 (`01_sfm/images_undistorted/`), nie snímky z 00. Fázy 04 → 05 → 06 nezávisia od 02 a 03,
-dajú sa teda spustiť paralelne s tréningom gaussiánov.
+dajú sa teda spustiť paralelne s tréningom gaussiánov (monitor: `max_parallel` v
+`configs/local.yaml`; na 4 GB GPU sa to neoplatí).
 
 ## Stav scény
 

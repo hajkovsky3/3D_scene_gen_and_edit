@@ -14,9 +14,9 @@ from typing import Any, ClassVar
 
 from PIL import Image
 
+from scenepipe.core.paths import checkpoint_path
 from scenepipe.core.phase import register
 from scenepipe.phases.p08_scene_graph.geometric_vlm import (
-    REPO_ROOT,
     SceneGraphGeometricVlm,
     _CropSource,
 )
@@ -55,7 +55,7 @@ class SceneGraphFlorence(SceneGraphGeometricVlm):
         dev = cfg["device"]
         if dev == "auto":
             dev = "cuda" if torch.cuda.is_available() else "cpu"
-        cache = REPO_ROOT / cfg["model_dir"]
+        cache = checkpoint_path(cfg["model_dir"])
         self._proc = AutoProcessor.from_pretrained(cfg["florence_model"], cache_dir=cache)
         # vlm_compute_dtype auto: float32 on the CPU and on GTX 16xx, whose fp16 matmuls are
         # slow (GTX 1650: 1.9 s per crop in fp32, 6.2 s in fp16; fp32 peak 3.4 GB)

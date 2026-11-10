@@ -27,6 +27,7 @@ from pathlib import Path
 import numpy as np
 
 from scenepipe.core.cameras import Camera, load_cameras
+from scenepipe.core.paths import checkpoint_path
 from scenepipe.core.workspace import Workspace
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -86,7 +87,7 @@ def evaluate(
     w, h = (max(round(v * scale), 1) for v in rec["eval_resolution"])
     params = to_params(read_ply(ws.abs(f"{gaussians}/gaussians.ply"), sh_degree=sh_degree))
 
-    cache = REPO_ROOT / DEPTH_MODEL_DIR
+    cache = checkpoint_path(DEPTH_MODEL_DIR)
     processor = AutoImageProcessor.from_pretrained(DEPTH_MODEL, cache_dir=cache)
     model = AutoModelForDepthEstimation.from_pretrained(DEPTH_MODEL, cache_dir=cache)
     model = model.cuda().eval()

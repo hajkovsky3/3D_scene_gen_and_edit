@@ -14,6 +14,7 @@ import numpy as np
 import pycolmap
 from PIL import Image
 
+from scenepipe.core.paths import checkpoint_path
 from scenepipe.core.phase import ContractError, Phase, register
 from scenepipe.phases.p01_sfm.align import compute_alignment
 from scenepipe.phases.p01_sfm.retrieval import bow_similarity, select_pairs
@@ -27,7 +28,6 @@ from scenepipe.phases.p01_sfm.torch_match import (
 
 log = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
 
 JPEG_QUALITY = 95
 MAX_MEAN_REPROJ_PX = 2.0
@@ -311,7 +311,7 @@ class SfmColmap(Phase):
         return self.config["matcher_backend"] == "lightglue"
 
     def _lightglue_weights(self) -> Path:
-        return REPO_ROOT / self.config["lightglue_weights"]
+        return checkpoint_path(self.config["lightglue_weights"])
 
     def _match_pairs_lightglue(
         self,
