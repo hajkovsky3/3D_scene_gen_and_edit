@@ -388,9 +388,15 @@ class MonitorApp(ctk.CTk):
         right = ctk.CTkFrame(body, fg_color=C["panel"], border_width=1, border_color=C["line"])
         right.grid(row=0, column=2, sticky="nsew")
         right.rowconfigure(1, weight=1)
-        self._section_title(right, "PRIEBEH FÁZ").grid(
-            row=0, column=0, sticky="w", padx=16, pady=10
+        right.columnconfigure(0, weight=1)
+        title = ctk.CTkFrame(right, fg_color="transparent")
+        title.grid(row=0, column=0, sticky="ew", padx=16, pady=10)
+        title.columnconfigure(1, weight=1)
+        self._section_title(title, "PRIEBEH FÁZ").grid(row=0, column=0, sticky="w")
+        self.total = ctk.CTkLabel(
+            title, text="", font=ctk.CTkFont(size=12, weight="bold"), text_color=C["ink"]
         )
+        self.total.grid(row=0, column=1, sticky="e")
         self.list = ctk.CTkScrollableFrame(right, width=390, fg_color="transparent")
         self.list.grid(row=1, column=0, sticky="nsew", padx=(8, 4), pady=(0, 10))
         self.list.columnconfigure(0, weight=1)
@@ -481,6 +487,19 @@ class MonitorApp(ctk.CTk):
         if running:
             text += f"   ·   beží {running['num']} {running['name']}"
         self.overall.configure(text=text)
+        self.total.configure(text=self._total_text(phases))
+
+    @staticmethod
+    def _total_text(phases: list[dict[str, Any]]) -> str:
+        """Sum of phase durations (a running phase counts with its time so far)."""
+        build = [p["elapsed_s"] for p in phases if p["id"] in BUILD_PHASES and p["elapsed_s"]]
+        edit = [p["elapsed_s"] for p in phases if p["id"] not in BUILD_PHASES and p["elapsed_s"]]
+        if not build and not edit:
+            return ""
+        text = fmt_dur(sum(build)) if build else ""
+        if edit:
+            text += ("   ·   " if text else "") + f"úprava {fmt_dur(sum(edit))}"
+        return text
 
     # --- graph ----------------------------------------------------------------------------
 
