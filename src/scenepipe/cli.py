@@ -1,4 +1,5 @@
-"""Command line: python -m scenepipe run <phase> --scene ID [--profile fast] [--set key=value].
+"""Command line: python -m scenepipe run <phase> --scene ID [--profile fast] [--set key=value]
+and python -m scenepipe build --scene ID [--profile fast] [--from 02_reconstruction] [--to ...].
 
 Config = configs/default.yaml, overlaid by configs/<profile>.yaml (only the keys it sets),
 then by --set overrides (values parsed as YAML). The section of a phase is its id without
@@ -21,7 +22,7 @@ import yaml
 
 from scenepipe.core.phase import get_impl
 from scenepipe.core.state import write_initial_state
-from scenepipe.core.workspace import EDIT_PHASES, PHASES, Workspace
+from scenepipe.core.workspace import BUILD_PHASES, EDIT_PHASES, PHASES, Workspace
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = REPO_ROOT / "configs"
@@ -98,6 +99,38 @@ def run_phase(
     return outs
 
 
+def run_build(
+    scene: str,
+    workspace: Path,
+    profile: str | None = None,
+    first: str = BUILD_PHASES[0],
+    last: str = BUILD_PHASES[-1],
+) -> dict[str, float]:
+    """Run build phases first..last one after another in the current Python; each phase also
+    logs to workspace/<scene>/logs/<phase>.log. Returns wall time per phase in seconds."""
+    phases = BUILD_PHASES[BUILD_PHASES.index(first) : BUILD_PHASES.index(last) + 1]
+    if not phases:
+        raise ValueError(f"empty phase range {first}..{last}")
+    log_dir = Workspace.open(workspace, scene).root / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    times: dict[str, float] = {}
+    for phase in phases:
+        handler = logging.FileHandler(log_dir / f"{phase}.log", mode="w", encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(message)s"))
+        logging.getLogger().addHandler(handler)
+        t0 = time.perf_counter()
+        try:
+            run_phase(phase, scene, workspace, profile)
+        finally:
+            logging.getLogger().removeHandler(handler)
+            handler.close()
+        times[phase] = time.perf_counter() - t0
+    for phase, s in times.items():
+        log.info("build %-20s %7.0f s", phase, s)
+    log.info("build total %.0f s (%.1f min)", sum(times.values()), sum(times.values()) / 60)
+    return times
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m scenepipe")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -108,20 +141,29 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--profile", default="default", help="configs/<profile>.yaml overlay")
     run.add_argument("--set", dest="overrides", action="append", default=[], metavar="KEY=VAL")
     run.add_argument("--edit", dest="edit_id", help="edit id (phases 09-12)")
+    build = sub.add_parser("build", help="run the build phases 00-08 one after another")
+    build.add_argument("--scene", required=True)
+    build.add_argument("--workspace", type=Path, default=REPO_ROOT / "workspace")
+    build.add_argument("--profile", default="default", help="configs/<profile>.yaml overlay")
+    build.add_argument("--from", dest="first", choices=BUILD_PHASES, default=BUILD_PHASES[0])
+    build.add_argument("--to", dest="last", choices=BUILD_PHASES, default=BUILD_PHASES[-1])
     args = ap.parse_args(argv)
 
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(name)s %(message)s", stream=sys.stderr
     )
-    if args.phase in EDIT_PHASES and not args.edit_id:
+    if args.cmd == "run" and args.phase in EDIT_PHASES and not args.edit_id:
         ap.error(f"{args.phase} needs --edit")
     signal.signal(signal.SIGTERM, _on_sigterm)
     try:
-        run_phase(
-            args.phase, args.scene, args.workspace, args.profile, args.overrides, args.edit_id
-        )
+        if args.cmd == "build":
+            run_build(args.scene, args.workspace, args.profile, args.first, args.last)
+        else:
+            run_phase(
+                args.phase, args.scene, args.workspace, args.profile, args.overrides, args.edit_id
+            )
     except KeyboardInterrupt as e:
-        log.warning("%s stopped: %s", args.phase, e)
+        log.warning("%s stopped: %s", args.cmd, e)
         return 130
     return 0
 

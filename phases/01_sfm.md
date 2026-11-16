@@ -34,8 +34,15 @@ pretože vzťahy v grafe scény (napr. *on*) potrebujú vedieť, kde je hore.
 
 ## Postup
 
-1. **Features**: SIFT (CPU). ALIKED zatiaľ nie (váhy neschválené). Pre ťažšie scény
-   SIFT + LightGlue (párovanie, pozri krok 2).
+1. **Features**: SIFT (CPU, COLMAP), alebo `features: aliked`: ALIKED (Zhao et al., IEEE TIM
+   2023; váhy `aliked-n16rot` z Shiaoming/ALIKED, BSD-3) v PyTorch cez kornia (GPU, ak
+   `use_gpu` a CUDA). Obrázok sa zmenší na dlhšiu stranu `aliked_max_image_size` (1600),
+   najviac `max_num_features` bodov s prahom detekcie 0,2 (ako extraktor LightGlue). pycolmap
+   z PyPI nemá ONNX, preto COLMAP dostane iba body (`import_images` + `write_keypoints`,
+   súradnice v konvencii COLMAPu: stred pixla +0,5, v plnom rozlíšení) a zhody; deskriptory
+   ostávajú v pamäti. ALIKED sa vždy páruje sieťou LightGlue s váhami pre ALIKED
+   (`aliked_lightglue.pth` z cvg/LightGlue, Apache 2.0), `matcher_backend` sa pri ňom
+   nepoužije. Pre ťažšie scény aj SIFT + LightGlue (párovanie, pozri krok 2).
    Kamera: ak `single_camera: true` a všetky snímky majú rovnaký rozmer aj `exif_focal_35mm`,
    jedna spoločná kamera (model `SIMPLE_RADIAL`), inak COLMAP `AUTO`. Ak `frames.json` obsahuje `exif_focal_35mm`,
    použije sa ako počiatočný odhad ohniska: `f_px = f35 * diag_px / 43.27`
@@ -51,7 +58,12 @@ pretože vzťahy v grafe scény (napr. *on*) potrebujú vedieť, kde je hore.
      vlastný kód v numpy, nič sa nesťahuje. Dvojice sa zapíšu do `pairs.txt` (pracovný adresár)
      a párujú cez `match_image_pairs`. Počet dvojíc rastie lineárne (~13 na snímku pri oknách 5 + 5; predtým 10 + 10, ~20 na snímku).
    - `auto`: `exhaustive` pri ≤ `auto_exhaustive_max` snímkach (default 100), inak `retrieval`.
-   - `vocab_tree` a loop detection v COLMAP potrebujú stiahnuť vocabulary tree, zatiaľ nie sú zapnuté.
+   - `vocab_tree`: okno a kvadratické posuny ako `sequential` + pre každú snímku
+     `vocab_tree_num_images` najpodobnejších snímok podľa predtrénovaného vocabulary tree
+     COLMAPu (`vocab_tree_faiss_flickr100K_words32K.bin`, formát faiss od COLMAP 3.12, BSD;
+     `VocabTreePairGenerator` z pycolmap), ako loop detection v COLMAPe. Strom je natrénovaný
+     na SIFT, s `features: aliked` sa nedá použiť (chyba). Pri `retrieval` s ALIKED sa
+     bag-of-words počíta z deskriptorov ALIKED (bez RootSIFT).
 
    Všetky matchery vyrobia zoznam dvojíc (aj `sequential`, rovnakou funkciou ako okno
    v `retrieval`) a párujú sa po dávkach (~20 volaní), aby sa dal hlásiť priebeh.
@@ -133,6 +145,12 @@ sfm:
   matcher_backend: default  # default | lightglue
   lightglue_weights: checkpoints/lightglue/sift_lightglue.pth  # relatívne ku koreňu repozitára
   lightglue_min_score: 0.1  # zahodiť zhody LightGlue s nižším skóre
+  aliked_model: aliked-n16rot
+  aliked_weights: checkpoints/aliked/aliked-n16rot.pth
+  aliked_lightglue_weights: checkpoints/lightglue/aliked_lightglue.pth
+  aliked_max_image_size: 1600   # dlhšia strana obrázka pre ALIKED
+  vocab_tree_path: checkpoints/colmap/vocab_tree_faiss_flickr100K_words32K.bin
+  vocab_tree_num_images: 10     # vocab_tree: najpodobnejšie snímky na snímku
   mapper: global            # global | incremental
   fallback_incremental_below: 0.8
   single_camera: true       # true pre video z jedného telefónu
@@ -150,9 +168,15 @@ sfm:
   keep_work: false
 ```
 
-`aliked` a `vocab_tree` potrebujú stiahnuť váhy alebo vocabulary tree. Kým ich autor
-neschváli, implementácia pri nich skončí chybou. `lightglue` je schválený (2026-10-27),
-váhy treba stiahnuť ručne (príkaz v kroku 2).
+`lightglue`, `aliked` a `vocab_tree` potrebujú váhy alebo vocabulary tree v `checkpoints/`
+(schválené 2026-10-27, resp. 2026-11-13; bez nich fáza skončí chybou s cestou k súboru):
+
+```bash
+mkdir -p checkpoints/aliked checkpoints/lightglue checkpoints/colmap
+curl -L -o checkpoints/aliked/aliked-n16rot.pth https://github.com/Shiaoming/ALIKED/raw/main/models/aliked-n16rot.pth
+curl -L -o checkpoints/lightglue/aliked_lightglue.pth https://github.com/cvg/LightGlue/releases/download/v0.1_arxiv/aliked_lightglue.pth
+curl -L -o checkpoints/colmap/vocab_tree_faiss_flickr100K_words32K.bin https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words32K.bin
+```
 
 ## Hardvér
 
@@ -258,7 +282,25 @@ test: `tests/contracts/test_p01.py` (syntetická miestnosť so známymi kamerami
   Na dobre nasnímanej scéne sa neoplatí, default ostáva `default`. Prínos čakať pri ťažších
   scénach s malým prekryvom (scéna z telefónu); *counter* sa pre jasný výsledok nespúšťal.
 - [ ] LightGlue na scéne z telefónu (*izba*, čaká na dáta)
-- [ ] ALIKED / vocab tree (čaká na schválenie stiahnutia váh)
+- [x] ALIKED + LightGlue (`features: aliked`) a `matcher: vocab_tree` (2026-11-13, `impl_version` 5):
+  váhy stiahnuté so súhlasom autora; kontraktové testy na CPU (15 syntetických snímok, všetky
+  zaregistrované, ohnisko ±3 %). Meranie na *m360_room* (2026-11-13, profil `fast`, GTX 1650
+  vo WSL, rovnaký výstup 00, chyba voči GT pózam Mip-NeRF 360 cez `scenepipe.eval.sfm_poses`,
+  medián / p90):
+
+  | Variant | Dvojice | Párovanie | Celý beh | Body | Reproj. | Rotácia | Poloha |
+  |---|---|---|---|---|---|---|---|
+  | SIFT + `retrieval` (`fast`) | 3 897 | 114 s | 503 s¹ | 51 162 | 0,64 px | 0,062° / 0,083° | 0,046 % / 0,107 % |
+  | ALIKED + LightGlue, `retrieval` | 3 816 | 1 723 s | 2 023 s | 33 180 | 1,10 px | 0,054° / 0,081° | 0,048 % / 0,116 % |
+  | SIFT + `vocab_tree` | 3 926 | 82 s | 414 s | 52 408 | 0,66 px | 0,034° / 0,053° | 0,066 % / 0,136 % |
+
+  ¹ beh súvislého buildu, počas extrakcie SIFT bežali na CPU iné testy (138 s namiesto ~96 s).
+  Všetky varianty zaregistrovali 300/300 kamier. ALIKED páruje LightGlue ~0,45 s na dvojicu
+  (15× pomalšie) a presnosť je v rámci stotín stupňa rovnaká, na dobre nasnímanej scéne sa
+  neoplatí (rovnako ako SIFT + LightGlue). `vocab_tree` je rovnako presný ako vlastný
+  `retrieval` (rotácia o niečo lepšia, poloha o niečo horšia) a nepotrebuje k-means; default
+  ostáva `retrieval`, ktorý nepotrebuje stiahnutý strom. Oba prínosy treba overiť na scéne
+  z telefónu (*izba*), kde je prekryv menší.
 - [ ] (voliteľné) implementácia `vggt`
 
 ## Zdroje

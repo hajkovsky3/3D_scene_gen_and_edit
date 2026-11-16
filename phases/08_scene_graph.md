@@ -111,6 +111,18 @@ a do logu ide varovanie (tie stavy vznikli zo starého buildu).
 5. **Sémantické vzťahy** (voliteľné, LLM): pre páry blízkych objektov poslať LLM labely,
    captions a geometrické fakty → vzťahy ako `part_of`, `supports`, `belongs_to_set`.
    Iba ako doplnok, geometrické vzťahy sú zdroj pravdy pre umiestňovanie.
+
+   Implementované v `geometric_vlm` (`semantic_relations: true`): kandidáti sú dvojice uzlov
+   bez štruktúry spojené geometrickou hranou (`on`, `inside`, `near`), najviac
+   `semantic_max_pairs` s najvyššou istotou hrany. Ten istý model (Qwen3-VL-4B, iba text)
+   dostane label, caption a atribúty oboch objektov, geometrické fakty („A is on B“, „A and B
+   are close to each other“) a výber zo 7 možností: A je časť B, B je časť A, A nesie B,
+   B nesie A, patria do jednej sady, stoja pri sebe zámerne, žiadna. Odpoveď sa číta
+   z logitov tokenov číslic 1–7 po jednom priechode (bez generovania, vždy spracovateľná),
+   pravdepodobnosť vybranej možnosti po normalizácii na tieto tokeny je `confidence`.
+   Hrany pod `semantic_min_confidence` a odpoveď „žiadna“ sa zahodia. `part_of`: zdroj je
+   časť cieľa; `supports`: zdroj nesie cieľ; `belongs_to_set` a `next_to` sú symetrické
+   (`source` < `target`). Počty idú do `report.json` → `semantic`.
 6. Uložiť JSON (+ NetworkX sa dá postaviť pri načítaní; formát kontroluje `core/scene_graph.py`).
 
 ### Presne (implementované)
@@ -170,7 +182,7 @@ Vzťahy (krok 4), ε = `on_eps_rel` × mierka, δ = `near_delta_rel` × mierka:
 
 | Názov | Popis | Licencia |
 |---|---|---|
-| `geometric_vlm` (primárna) | kroky 1–4 vlastný kód, caption cez VLM (`geometric_vlm.py`; predvolene Qwen3-VL-4B-Instruct 4-bit cez `transformers` + `bitsandbytes`), krok 5 (LLM) zatiaľ nie | vlastný kód; Qwen3-VL-4B-Instruct (Apache 2.0), na silnejšej GPU Qwen2.5-VL-7B / Qwen3-VL-8B (Apache 2.0) |
+| `geometric_vlm` (primárna) | kroky 1–4 vlastný kód, caption cez VLM (`geometric_vlm.py`; predvolene Qwen3-VL-4B-Instruct 4-bit cez `transformers` + `bitsandbytes`), krok 5 (LLM) tým istým modelom ako text (`semantic_relations: true`) | vlastný kód; Qwen3-VL-4B-Instruct (Apache 2.0), na silnejšej GPU Qwen2.5-VL-7B / Qwen3-VL-8B (Apache 2.0) |
 | `geometric_only` (baseline) | bez VLM/LLM; caption = label, iba geometrické vzťahy (`phases/p08_scene_graph/geometric_only.py`, spoločná časť `common.py`) | vlastný kód |
 | `florence` (ľahká alternatíva) | popisy cez Florence-2-large (`florence.py`, úloha `<CAPTION>` na výreze s vymaskovaným pozadím, jeden pohľad); neodpovedá na otázky, takže labely neopravuje a atribúty sú prvé slovo farby a materiálu z popisu (bez „on a gray background“) | MIT |
 
@@ -221,6 +233,9 @@ scene_graph:
   near_delta_rel: 0.05
   near_points: 1000           # podmnožina bodov na vzdialenosť pri `near`
   semantic_relations: false
+  semantic_max_pairs: 200       # dvojice s geometrickou hranou, najvyššia istota prvá
+  semantic_min_confidence: 0.5  # pravdepodobnosť vybranej odpovede
+  semantic_batch_size: 8        # prompty na jeden priechod modelu (iba text)
 ```
 
 ## Hardvér
@@ -271,7 +286,17 @@ labelu). `geometric_only` beží v ľubovoľnom prostredí s numpy (bez torch a 
 - [x] výber najlepších pohľadov
 - [x] geometrické vzťahy + testy na syntetických krabiciach
 - [x] captions, atribúty a overené opravy labelov cez VLM (`geometric_vlm`, Qwen3-VL-4B 4-bit)
-- [ ] (voliteľné) sémantické vzťahy cez LLM
+- [x] (voliteľné) sémantické vzťahy cez LLM (`semantic_relations`, 2026-11-13; kontraktový
+  test s falošným modelom). Beh na *m360_room* (súvislý build `fast`, 44 uzlov, Qwen3-VL-4B
+  4-bit ako text, GTX 1650): 88 dvojíc za 233 s (2,7 s na dvojicu), ponechaných 84 hrán:
+  `next_to` 35, `belongs_to_set` 22, `part_of` 17, `supports` 10, „žiadna“ len 4. Správne
+  napr. *pillow part_of sofa* (1,0), *entertainment center supports television* (0,96),
+  *curtain belongs_to_set window*, *speaker belongs_to_set subwoofer*. Veľa hrán je však
+  nezmyselných a s vysokou istotou: *slipper part_of carpet* (1,0), *laptop part_of sofa*
+  (1,0), *speaker part_of carpet*, *carpet part_of carpet*, *table supports piano*.
+  4B model takmer nikdy nevolí „žiadna“ a jeho pravdepodobnosti nie sú kalibrované, prah
+  `semantic_min_confidence` preto nepomôže. **Default ostáva vypnuté**; na použitie treba
+  väčší model alebo prísnejšiu otázku (napr. dvojstupňovo: najprv súvisia / nesúvisia).
 - [x] vizualizácia (`graph.html`), zápis, vytvorenie `state/v000`
 - [x] kontraktový test
 - [x] beh `geometric_only` na Mip-NeRF 360 (2026-11-08, Windows, CPU; vstup 07 s profilom

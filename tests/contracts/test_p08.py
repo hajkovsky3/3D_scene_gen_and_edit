@@ -30,13 +30,17 @@ from scenepipe.phases.p08_scene_graph.common import (
 from scenepipe.phases.p08_scene_graph.florence import caption_attributes
 from scenepipe.phases.p08_scene_graph.geometric_only import SceneGraphGeometricOnly
 from scenepipe.phases.p08_scene_graph.geometric_vlm import (
+    RELATION_CHOICES,
     SceneGraphGeometricVlm,
     apply_description,
     build_prompt,
+    build_relation_prompt,
     check_vote,
+    decode_relations,
     normalize_name,
     outlined_crop,
     parse_response,
+    semantic_pairs,
 )
 
 FRAMES = [f"f{i + 1:06d}" for i in range(12)]
@@ -390,6 +394,67 @@ def test_geometric_vlm_fake_model(tmp_path):
                                                                     (None, "bowl")}  # fmt: skip
     assert [(r["from"], r["to"]) for r in report["relabel_rejected"]] == [("pot", "bowl")]
     assert report["num_unlabeled"] == 0
+
+
+class FakeLlm(FakeVlm):
+    """Semantic relations: the cup and the table are a set, everything else unrelated or unsure."""
+
+    def answer_probs(self, prompts, choices):
+        self.relation_prompts = getattr(self, "relation_prompts", []) + list(prompts)
+        out = np.full((len(prompts), choices), 0.01)
+        for i, pr in enumerate(prompts):
+            if '"cup"' in pr and '"table"' in pr:
+                out[i, 4] = 0.9  # 5: same set
+            elif '"pot"' in pr:
+                out[i, 0] = 0.35  # unsure part_of: below semantic_min_confidence
+                out[i, 2] = 0.3
+                out[i, 6] = 0.3
+            else:
+                out[i, 6] = 0.9  # 7: none
+        return out / out.sum(1, keepdims=True)
+
+
+def test_geometric_vlm_semantic_relations(tmp_path):
+    ws, ids = make_ws(tmp_path)
+    _add_images_and_masks(ws)
+    phase = FakeLlm(ws, {"semantic_relations": True, "semantic_batch_size": 2})
+    outs = phase.execute()
+    doc = json.loads(outs["scene_graph"].read_text("utf-8"))
+    validate_scene_graph(doc)
+    nodes = {n["instance_id"]: n["node_id"] for n in doc["nodes"]}
+    sem = [e for e in doc["edges"] if e["origin"] == "semantic"]
+    assert [(e["source"], e["target"], e["relation"]) for e in sem] == [
+        (min(nodes[ids["cup"]], nodes[ids["table"]]), max(nodes[ids["cup"]], nodes[ids["table"]]),
+         "belongs_to_set")
+    ]  # fmt: skip
+    assert sem[0]["confidence"] == pytest.approx(0.9 / 0.96, abs=1e-3)
+    # only non-structure pairs with a geometric edge are asked, no floor
+    assert phase.relation_prompts and not any('"floor"' in p for p in phase.relation_prompts)
+    report = json.loads(outs["report"].read_text("utf-8"))["semantic"]
+    assert report["num_pairs"] == len(phase.relation_prompts) and report["num_edges"] == 1
+
+
+def test_semantic_helpers():
+    nodes = [
+        {"label": "floor", "is_structure": True},
+        {"label": "lid", "is_structure": False, "caption": "a glass lid", "attributes": {}},
+        {"label": "pot", "is_structure": False, "caption": "pot", "attributes": {"color": "red"}},
+    ]
+    edges = [
+        {"source": 2, "target": 0, "relation": "on", "confidence": 1.0},
+        {"source": 1, "target": 2, "relation": "on", "confidence": 0.7},
+        {"source": 1, "target": 2, "relation": "near", "confidence": 0.9},
+    ]
+    pairs = semantic_pairs(nodes, edges, 10)
+    assert pairs == [(1, 2, ["A is on B", "A and B are close to each other"])]
+    prompt = build_relation_prompt(nodes[1], nodes[2], pairs[0][2])
+    assert 'A: "lid" (a glass lid)' in prompt and 'B: "pot" [color: red]' in prompt
+    p = np.zeros((1, len(RELATION_CHOICES)))
+    p[0, 1] = 1.0  # 2: B is a part of A -> pot part_of lid, source is B
+    assert decode_relations(pairs, p, 0.5)[0]["source"] == 2
+    p[0] = 0
+    p[0, 6] = 1.0  # none
+    assert decode_relations(pairs, p, 0.5) == []
 
 
 def test_vlm_helpers():

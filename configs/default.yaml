@@ -28,6 +28,11 @@ sfm:
   matcher_backend: default  # default | lightglue (SIFT + LightGlue v PyTorch, phases/01_sfm.md)
   lightglue_weights: checkpoints/lightglue/sift_lightglue.pth
   lightglue_min_score: 0.1
+  aliked_weights: checkpoints/aliked/aliked-n16rot.pth          # features: aliked (phases/01_sfm.md)
+  aliked_lightglue_weights: checkpoints/lightglue/aliked_lightglue.pth
+  aliked_max_image_size: 1600  # dlhšia strana obrázka pre ALIKED
+  vocab_tree_path: checkpoints/colmap/vocab_tree_faiss_flickr100K_words32K.bin  # matcher: vocab_tree
+  vocab_tree_num_images: 10    # vocab_tree: najpodobnejšie snímky na snímku
   mapper: global            # global | incremental
   fallback_incremental_below: 0.8
   single_camera: true       # true pre video z jedného telefónu
@@ -171,6 +176,9 @@ lifting:
   fragment_attach_share: 0.5
   zero_shot_weight: 0.5     # váha zero-shot skóre z 06 v label_votes
   feature_min_sim: 0.6
+  fill_unassigned: projection   # none | projection: doplniť nepriradené gaussiány projekciou do masiek (odlesky TV)
+  fill_min_share: 0.6
+  fill_margin: 0.1
   num_debug: 6
 
 # --- 08_scene_graph ---
@@ -204,7 +212,10 @@ scene_graph:
   inside_share: 0.6           # podiel bodov A v OBB B
   near_delta_rel: 0.05        # vzdialenosť bodov < delta × mierka scény
   near_points: 1000
-  semantic_relations: false
+  semantic_relations: false    # LLM vzťahy part_of, supports, belongs_to_set, next_to (geometric_vlm)
+  semantic_max_pairs: 200
+  semantic_min_confidence: 0.5
+  semantic_batch_size: 8
 
 # --- 09_prompt_parsing ---
 prompt_parsing:

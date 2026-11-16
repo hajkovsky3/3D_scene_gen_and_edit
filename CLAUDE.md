@@ -115,8 +115,9 @@ potichu zmenil kontrakt alebo pridal ťažkú závislosť.
 ```bash
 # spustenie jednej fázy (config: default.yaml + voliteľný profil + --set kľúč=hodnota):
 python -m scenepipe run 01_sfm --scene room --profile fast --set max_num_features=2048
-# celý build a úprava (zatiaľ nie je implementované, cieľový tvar):
-python -m scenepipe build --scene room
+# celý build 00–08 za sebou v aktuálnom Pythone (logy do workspace/<scéna>/logs/):
+python -m scenepipe build --scene room --profile fast [--from 02_reconstruction] [--to 07_lifting]
+# úprava (zatiaľ nie je implementované, cieľový tvar):
 python -m scenepipe edit --scene room --prompt "zmeň farbu gauča na modrú"
 # okno monitora: výber vstupu, spustenie buildu, graf fáz a priebeh (extra "monitor");
 # ktorá fáza beží v ktorom prostredí: configs/local.yaml (vzor configs/local.example.yaml)

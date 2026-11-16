@@ -154,11 +154,49 @@ def test_auto_matcher_sequential_override(tmp_path):
     assert load(ws, "report.json")["matcher"] == "sequential"
 
 
-def test_unsupported_features(tmp_path):
+def test_unknown_features(tmp_path):
     ws = Workspace.open(tmp_path, "room")
     make_ingest(ws, orbit_cameras(3), source=None)
-    with pytest.raises(NotImplementedError):
-        SfmColmap(ws, {"features": "aliked"}).execute()
+    with pytest.raises(ValueError):
+        SfmColmap(ws, {"features": "superpoint"}).execute()
+    with pytest.raises(ValueError):  # the vocabulary tree is built on SIFT
+        SfmColmap(ws, {"features": "aliked", "matcher": "vocab_tree"}).execute()
+
+
+def _need_weights(*keys: str) -> None:
+    for key in keys:
+        if not checkpoint_path(SfmColmap.defaults[key]).is_file():
+            pytest.skip(f"{SfmColmap.defaults[key]} not downloaded (phases/01_sfm.md)")
+
+
+def test_aliked_lightglue_cpu(tmp_path):
+    """ALIKED + LightGlue on the CPU, needs kornia and the local weights."""
+    pytest.importorskip("kornia")
+    _need_weights("aliked_weights", "aliked_lightglue_weights")
+    ws = Workspace.open(tmp_path, "room")
+    make_ingest(ws, orbit_cameras(15), source="input/room.mp4")
+    cfg = {"features": "aliked", "max_num_features": 1024, "matcher": "retrieval"}
+    SfmColmap(
+        ws, {**cfg, "sequential_overlap": 3, "retrieval_num_words": 64, "use_gpu": False}
+    ).execute()
+    report = load(ws, "report.json")
+    assert report["features"] == "aliked" and report["match_device"] == "cpu"
+    assert report["num_registered"] >= 14 and report["mean_reprojection_error_px"] < 1.0
+    for c in load(ws, "cameras.json")["cameras"]:
+        assert c["fx"] == pytest.approx(F, rel=0.03)
+
+
+def test_vocab_tree_matcher(tmp_path):
+    _need_weights("vocab_tree_path")
+    ws = Workspace.open(tmp_path, "room")
+    make_ingest(ws, orbit_cameras(15), source="input/room.mp4")
+    cfg = {"max_num_features": 1024, "matcher": "vocab_tree", "sequential_overlap": 2}
+    SfmColmap(ws, {**cfg, "vocab_tree_num_images": 3, "use_gpu": False}).execute()
+    report = load(ws, "report.json")
+    assert report["matcher"] == "vocab_tree"
+    # window of 2 + quadratic offsets alone gives 2 * 15 - 3 + 11 + 7 = 45 pairs
+    assert report["num_pairs"] > 45
+    assert report["num_registered"] >= 14
 
 
 def test_lightglue_backend_cpu(tmp_path):

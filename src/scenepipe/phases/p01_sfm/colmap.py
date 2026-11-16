@@ -19,7 +19,11 @@ from scenepipe.core.phase import ContractError, Phase, register
 from scenepipe.phases.p01_sfm.align import compute_alignment
 from scenepipe.phases.p01_sfm.retrieval import bow_similarity, select_pairs
 from scenepipe.phases.p01_sfm.torch_match import (
+    LIGHTGLUE_ALIKED_CONF,
+    aliked_lightglue_inputs,
     cuda_available,
+    extract_aliked,
+    load_aliked,
     load_lightglue,
     match_pairs,
     match_pairs_lightglue,
@@ -40,7 +44,7 @@ MIN_MATCH_CHUNK = 100
 class SfmColmap(Phase):
     phase = "01_sfm"
     impl = "colmap"
-    impl_version = "4"
+    impl_version = "5"
     contract_version = 2
     defaults: ClassVar[dict[str, Any]] = {
         "features": "sift",
@@ -48,6 +52,12 @@ class SfmColmap(Phase):
         "matcher_backend": "default",
         "lightglue_weights": "checkpoints/lightglue/sift_lightglue.pth",
         "lightglue_min_score": 0.1,
+        "aliked_model": "aliked-n16rot",
+        "aliked_weights": "checkpoints/aliked/aliked-n16rot.pth",
+        "aliked_lightglue_weights": "checkpoints/lightglue/aliked_lightglue.pth",
+        "aliked_max_image_size": 1600,
+        "vocab_tree_path": "checkpoints/colmap/vocab_tree_faiss_flickr100K_words32K.bin",
+        "vocab_tree_num_images": 10,
         "mapper": "global",
         "fallback_incremental_below": 0.8,
         "single_camera": True,
@@ -75,7 +85,7 @@ class SfmColmap(Phase):
 
     def steps(self) -> list[str]:
         # COLMAP's own CPU matcher verifies the pairs while matching them
-        torch_matching = self._match_device() == "cuda" or self._lightglue()
+        torch_matching = self._match_device() == "cuda" or self._lightglue() or self._aliked()
         gpu = ["geometrická verifikácia"] if torch_matching else []
         return [
             "extrakcia príznakov", "výber dvojíc", "párovanie", *gpu, "mapping", "undistorcia",
@@ -107,7 +117,8 @@ class SfmColmap(Phase):
 
         # 1. features
         timer = _Timer()
-        self.progress.update(0.0, "extrakcia príznakov", f"SIFT, {len(names)} snímok")
+        kind = "ALIKED" if self._aliked() else "SIFT"
+        self.progress.update(0.0, "extrakcia príznakov", f"{kind}, {len(names)} snímok")
         single = self._single_camera(frames)
         reader = pycolmap.ImageReaderOptions()
         reader.camera_model = "SIMPLE_RADIAL"
@@ -115,20 +126,27 @@ class SfmColmap(Phase):
         if prior is not None:
             w, h = frames[0]["width"], frames[0]["height"]
             reader.camera_params = f"{prior},{w / 2},{h / 2},0"
-        extraction = pycolmap.FeatureExtractionOptions()
-        extraction.num_threads = int(cfg["num_threads"])
-        extraction.sift.max_num_features = int(cfg["max_num_features"])
-        if int(cfg["sift_max_image_size"]) > 0:
-            extraction.max_image_size = int(cfg["sift_max_image_size"])
-        pycolmap.extract_features(
-            db,
-            images_dir,
-            image_names=names,
-            camera_mode=pycolmap.CameraMode.SINGLE if single else pycolmap.CameraMode.AUTO,
-            reader_options=reader,
-            extraction_options=extraction,
-            device=pycolmap.Device.cpu,
-        )
+        camera_mode = pycolmap.CameraMode.SINGLE if single else pycolmap.CameraMode.AUTO
+        aliked_feats: list[dict] | None = None
+        if self._aliked():
+            pycolmap.Database.open(db).close()  # import_images needs an existing database
+            pycolmap.import_images(db, images_dir, camera_mode, names, reader)
+            aliked_feats = self._extract_aliked(db, images_dir, names)
+        else:
+            extraction = pycolmap.FeatureExtractionOptions()
+            extraction.num_threads = int(cfg["num_threads"])
+            extraction.sift.max_num_features = int(cfg["max_num_features"])
+            if int(cfg["sift_max_image_size"]) > 0:
+                extraction.max_image_size = int(cfg["sift_max_image_size"])
+            pycolmap.extract_features(
+                db,
+                images_dir,
+                image_names=names,
+                camera_mode=camera_mode,
+                reader_options=reader,
+                extraction_options=extraction,
+                device=pycolmap.Device.cpu,
+            )
         timer.lap("features")
 
         # 2.-3. matching + geometric verification
@@ -137,14 +155,18 @@ class SfmColmap(Phase):
         matching.num_threads = int(cfg["num_threads"])
         self.progress.update(0.08, "výber dvojíc", matcher)
         if matcher == "retrieval":
-            pairs = self._retrieval_pairs(db, names)
+            pairs = self._retrieval_pairs(db, names, aliked_feats)
+        elif matcher == "vocab_tree":
+            pairs = self._vocab_tree_pairs(db, names)
         elif matcher == "sequential":
             pairs = select_pairs(None, len(names), int(cfg["sequential_overlap"]), 0)
         else:
             pairs = [(i, j) for i in range(len(names)) for j in range(i + 1, len(names))]
         timer.lap("pairs")
         device = self._match_device()
-        if self._lightglue():
+        if aliked_feats is not None:
+            self._match_pairs_aliked(db, names, pairs, aliked_feats, matching, work, device)
+        elif self._lightglue():
             self._match_pairs_lightglue(db, names, pairs, matching, work, device)
         elif device == "cuda":
             self._match_pairs_torch(db, names, pairs, matching, work)
@@ -211,6 +233,7 @@ class SfmColmap(Phase):
         }
         timer.lap("export")
         report = self._report(recon, frames, models, best_mapper, matcher, single, removed)
+        report["features"] = cfg["features"]
         report["num_pairs"] = len(pairs)
         report["match_device"] = device
         report["timings_s"] = timer.laps
@@ -219,19 +242,28 @@ class SfmColmap(Phase):
 
     def _check_supported(self) -> None:
         cfg = self.config
-        if cfg["features"] != "sift":
-            raise NotImplementedError(
-                "01_sfm/colmap: only features=sift; ALIKED needs a model download that is not "
-                "approved yet (phases/01_sfm.md)"
-            )
+        if cfg["features"] not in ("sift", "aliked"):
+            raise ValueError(f"unknown features {cfg['features']!r}")
         if cfg["matcher_backend"] not in ("default", "lightglue"):
             raise ValueError(f"unknown matcher_backend {cfg['matcher_backend']!r}")
-        if self._lightglue() and not self._lightglue_weights().is_file():
-            raise FileNotFoundError(
-                f"01_sfm: LightGlue weights not found: {self._lightglue_weights()} "
-                "(download: phases/01_sfm.md, Konfigurácia)"
-            )
-        if cfg["matcher"] not in ("auto", "sequential", "exhaustive", "retrieval"):
+        needed = []
+        if self._aliked():  # ALIKED is always matched with LightGlue
+            needed = [cfg["aliked_weights"], cfg["aliked_lightglue_weights"]]
+        elif self._lightglue():
+            needed = [cfg["lightglue_weights"]]
+        if cfg["matcher"] == "vocab_tree":
+            if self._aliked():
+                raise ValueError(
+                    "01_sfm: matcher vocab_tree needs SIFT (the tree is built on SIFT)"
+                )
+            needed.append(cfg["vocab_tree_path"])
+        for rel in needed:
+            if not checkpoint_path(rel).is_file():
+                raise FileNotFoundError(
+                    f"01_sfm: {checkpoint_path(rel)} not found (download: phases/01_sfm.md, "
+                    "Konfigurácia)"
+                )
+        if cfg["matcher"] not in ("auto", "sequential", "exhaustive", "retrieval", "vocab_tree"):
             raise NotImplementedError(f"01_sfm/colmap: matcher {cfg['matcher']!r} not supported")
         if cfg["mapper"] not in ("global", "incremental"):
             raise ValueError(f"unknown mapper {cfg['mapper']!r}")
@@ -250,15 +282,20 @@ class SfmColmap(Phase):
             return "exhaustive"
         return "retrieval"
 
-    def _retrieval_pairs(self, db_path: Path, names: list[str]) -> list[tuple[int, int]]:
+    def _retrieval_pairs(
+        self, db_path: Path, names: list[str], aliked_feats: list[dict] | None = None
+    ) -> list[tuple[int, int]]:
         """Pairs (indices into names) for the `retrieval` matcher; frames in frame_id order."""
         cfg = self.config
-        db = pycolmap.Database.open(db_path)
-        try:
-            ids = {img.name: img.image_id for img in db.read_all_images()}
-            descs = [np.asarray(db.read_descriptors(ids[n]).data) for n in names]
-        finally:
-            db.close()
+        if aliked_feats is not None:
+            descs = [f["descriptors"] for f in aliked_feats]
+        else:
+            db = pycolmap.Database.open(db_path)
+            try:
+                ids = {img.name: img.image_id for img in db.read_all_images()}
+                descs = [np.asarray(db.read_descriptors(ids[n]).data) for n in names]
+            finally:
+                db.close()
         sim = None
         if int(cfg["retrieval_num_neighbors"]) > 0:
             sim = bow_similarity(
@@ -266,6 +303,7 @@ class SfmColmap(Phase):
                 int(cfg["retrieval_num_words"]),
                 int(cfg["retrieval_sample"]),
                 seed=int(cfg["seed"]),
+                sift=aliked_feats is None,
             )
         pairs = select_pairs(
             sim, len(names), int(cfg["sequential_overlap"]), int(cfg["retrieval_num_neighbors"])
@@ -273,6 +311,30 @@ class SfmColmap(Phase):
         total = len(names) * (len(names) - 1) // 2
         log.info("retrieval matcher: %d pairs (exhaustive would be %d)", len(pairs), total)
         return pairs
+
+    def _vocab_tree_pairs(self, db_path: Path, names: list[str]) -> list[tuple[int, int]]:
+        """Temporal window (as `sequential`) + the `vocab_tree_num_images` most similar frames
+        by COLMAP's pretrained vocabulary tree (faiss format, SIFT), like COLMAP's loop
+        detection."""
+        cfg = self.config
+        pairs = set(select_pairs(None, len(names), int(cfg["sequential_overlap"]), 0))
+        opts = pycolmap.VocabTreePairingOptions()
+        opts.vocab_tree_path = str(checkpoint_path(cfg["vocab_tree_path"]))
+        opts.num_images = int(cfg["vocab_tree_num_images"]) + 1  # includes the query itself
+        opts.num_threads = int(cfg["num_threads"])
+        db = pycolmap.Database.open(db_path)
+        try:
+            index = {img.image_id: names.index(img.name) for img in db.read_all_images()}
+            generator = pycolmap.VocabTreePairGenerator(opts, db)
+            for a, b in generator.all_pairs():
+                i, j = index[a], index[b]
+                if i != j:
+                    pairs.add((min(i, j), max(i, j)))
+        finally:
+            db.close()
+        total = len(names) * (len(names) - 1) // 2
+        log.info("vocab_tree matcher: %d pairs (exhaustive would be %d)", len(pairs), total)
+        return sorted(pairs)
 
     def _match_pairs(
         self,
@@ -309,6 +371,75 @@ class SfmColmap(Phase):
 
     def _lightglue(self) -> bool:
         return self.config["matcher_backend"] == "lightglue"
+
+    def _aliked(self) -> bool:
+        return self.config["features"] == "aliked"
+
+    def _extract_aliked(self, db_path: Path, images_dir: Path, names: list[str]) -> list[dict]:
+        """ALIKED keypoints into the database, LightGlue inputs (with descriptors) returned."""
+        cfg = self.config
+        device = "cuda" if cfg["use_gpu"] and cuda_available() else "cpu"
+        model = load_aliked(
+            cfg["aliked_model"],
+            str(checkpoint_path(cfg["aliked_weights"])),
+            int(cfg["max_num_features"]),
+            device,
+        )
+        stage = self.progress.stage(0.0, 0.08, "extrakcia príznakov")
+        feats = []
+        db = pycolmap.Database.open(db_path)
+        try:
+            ids = {img.name: img.image_id for img in db.read_all_images()}
+            for k, n in enumerate(names):
+                with Image.open(images_dir / n) as im:
+                    rgb = np.asarray(im.convert("RGB"))
+                kp, desc = extract_aliked(model, rgb, int(cfg["aliked_max_image_size"]))
+                db.write_keypoints(ids[n], kp)
+                h, w = rgb.shape[:2]
+                feats.append(aliked_lightglue_inputs(kp, desc.astype(np.float16), w, h))
+                if k % 10 == 0:
+                    stage.update(k / len(names), f"ALIKED ({device}), {k}/{len(names)}")
+        finally:
+            db.close()
+        del model
+        _empty_cuda_cache()
+        log.info("ALIKED: %.0f keypoints per image", np.mean([len(f["keypoints"]) for f in feats]))
+        return feats
+
+    def _match_pairs_aliked(
+        self,
+        db_path: Path,
+        names: list[str],
+        pairs: list[tuple[int, int]],
+        features: list[dict],
+        matching: pycolmap.FeatureMatchingOptions,
+        work: Path,
+        device: str,
+    ) -> None:
+        """ALIKED + LightGlue in PyTorch, geometric verification in COLMAP."""
+        model = load_lightglue(
+            str(checkpoint_path(self.config["aliked_lightglue_weights"])),
+            device,
+            LIGHTGLUE_ALIKED_CONF,
+        )
+        feats = [{**f, "descriptors": f["descriptors"].astype(np.float32)} for f in features]
+        db = pycolmap.Database.open(db_path)
+        try:
+            ids = {img.name: img.image_id for img in db.read_all_images()}
+            stage = self.progress.stage(0.1, 0.4, "párovanie")
+            for i, j, m in match_pairs_lightglue(
+                feats,
+                pairs,
+                model,
+                min_score=float(self.config["lightglue_min_score"]),
+                on_progress=lambda done: stage.update(
+                    done / len(pairs), f"ALIKED + LightGlue ({device}), {done}/{len(pairs)}"
+                ),
+            ):
+                db.write_matches(ids[names[i]], ids[names[j]], m[: matching.max_num_matches])
+        finally:
+            db.close()
+        self._verify_pairs(db_path, names, pairs, work)
 
     def _lightglue_weights(self) -> Path:
         return checkpoint_path(self.config["lightglue_weights"])
@@ -583,6 +714,15 @@ class SfmColmap(Phase):
         report = json.loads(outputs["report"].read_text(encoding="utf-8"))
         for w in report["warnings"]:
             log.warning("01_sfm: %s", w)
+
+
+def _empty_cuda_cache() -> None:
+    try:
+        import torch
+    except ImportError:
+        return
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 def _cam_from_world(image: pycolmap.Image) -> np.ndarray:

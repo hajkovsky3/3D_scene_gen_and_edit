@@ -10,6 +10,13 @@ votes of 07 (`label_correction: vocabulary`), so the graph keeps the labels that
 can ground with the same text encoder, and (`relabel_check`) when the model then picks the
 new name over the old one in a forced choice, asked separately for every view.
 
+Semantic relations (`semantic_relations: true`, spec step 5): every pair of non-structure
+nodes joined by a geometric edge is described to the same model as text (labels, captions,
+attributes, the geometric relations between them) with a numbered multiple choice (`part_of`
+either way, `supports` either way, `belongs_to_set`, `next_to`, none). The answer is read from
+the logits of the digit tokens in one forward pass, so it is always parsable and its
+probability is the confidence; edges below `semantic_min_confidence` are dropped.
+
 Default model: Qwen3-VL-4B-Instruct (Apache 2.0), 4-bit NF4 through bitsandbytes: ~2.9 GB of
 VRAM, fits a 4 GB GPU. Spec: phases/08_scene_graph.md
 """
@@ -39,6 +46,32 @@ OUTLINE_RGB = (255, 0, 0)
 LABEL_CORRECTION = ("off", "vocabulary", "any")
 ATTRIBUTES = ("color", "material")
 _EMPTY = {"", "none", "unknown", "n/a", "null", "various", "multiple", "mixed"}
+
+# multiple choice of the semantic relations: (relation, A is the source) per answer digit 1..7
+RELATION_CHOICES: tuple[tuple[str | None, bool], ...] = (
+    ("part_of", True),  # 1: A is a part of B
+    ("part_of", False),  # 2: B is a part of A
+    ("supports", True),  # 3: A holds B up
+    ("supports", False),  # 4: B holds A up
+    ("belongs_to_set", True),  # 5: used together as a set
+    ("next_to", True),  # 6: placed beside each other on purpose
+    (None, True),  # 7: none of these
+)
+RELATION_PROMPT = (
+    "Two objects were found in a 3D scan of a room.\n"
+    "A: {a}\nB: {b}\n"
+    "Measured geometry: {facts}.\n"
+    "Which statement describes them best?\n"
+    "1. A is a part of B (e.g. a cushion of a sofa, a lid of a pot)\n"
+    "2. B is a part of A\n"
+    "3. A holds B up and is meant to carry it (e.g. a shelf holding books)\n"
+    "4. B holds A up and is meant to carry it\n"
+    "5. A and B belong to the same set, used together (e.g. a cup and a saucer, a chair "
+    "and its dining table)\n"
+    "6. A and B are placed next to each other on purpose (e.g. a nightstand next to a bed)\n"
+    "7. None of these, they are unrelated\n"
+    "Answer with the number only."
+)
 
 PROMPT = (
     "{detected} The red outline marks one region of the image (the outline itself is not "
@@ -73,6 +106,9 @@ class SceneGraphGeometricVlm(SceneGraphBase):
         "label_correction": "vocabulary",  # off | vocabulary | any
         "relabel_check": True,  # confirm a correction by a forced choice old/new in each view
         "describe_structure": False,  # captions also for floor, walls (usually useless)
+        "semantic_max_pairs": 200,  # pairs asked at most (highest geometric confidence first)
+        "semantic_min_confidence": 0.5,  # probability of the chosen answer
+        "semantic_batch_size": 8,  # prompts per forward pass (text only)
     }
 
     def inputs(self) -> dict[str, Path]:
@@ -221,9 +257,47 @@ class SceneGraphGeometricVlm(SceneGraphBase):
             "vlm_s_per_node": round((time.perf_counter() - t0) / max(len(todo), 1), 2),
         }
 
+    def answer_probs(self, prompts: list[str], choices: int) -> np.ndarray:
+        """[len(prompts), choices] probabilities of the answers "1".."choices" (text only,
+        the logits of the first answer token renormalized over the digit tokens)."""
+        import torch
+
+        tok = self._proc.tokenizer
+        ids = [tok.encode(str(i + 1), add_special_tokens=False)[0] for i in range(choices)]
+        convs = [[{"role": "user", "content": [{"type": "text", "text": p}]}] for p in prompts]
+        inputs = self._proc.apply_chat_template(
+            convs, tokenize=True, add_generation_prompt=True, return_dict=True,
+            return_tensors="pt", padding=True,
+        ).to(self._dev)  # fmt: skip
+        with torch.inference_mode():
+            logits = self._model(**inputs).logits[:, -1, ids].float()  # left padding
+        return torch.softmax(logits, dim=-1).cpu().numpy()
+
     def semantic_relations(self, nodes: list[dict], edges: list[dict]) -> list[dict]:
-        log.warning("geometric_vlm: semantic_relations (LLM) not implemented yet, skipped")
-        return []
+        cfg = self.config
+        t0 = time.perf_counter()
+        if getattr(self, "_model", None) is None:
+            self.load()  # describe() had no node to describe
+        pairs = semantic_pairs(nodes, edges, int(cfg["semantic_max_pairs"]))
+        prompts = [build_relation_prompt(nodes[a], nodes[b], facts) for a, b, facts in pairs]
+        bs = max(int(cfg["semantic_batch_size"]), 1)
+        stage = self.progress.stage(0.85, 0.95, "vzťahy")
+        probs = []
+        for start in range(0, len(prompts), bs):
+            probs.append(self.answer_probs(prompts[start : start + bs], len(RELATION_CHOICES)))
+            stage.update(min(start + bs, len(prompts)) / max(len(prompts), 1), "LLM vzťahy")
+        p = np.concatenate(probs) if probs else np.zeros((0, len(RELATION_CHOICES)))
+        out = decode_relations(pairs, p, float(cfg["semantic_min_confidence"]))
+        found = sorted({e["relation"] for e in out})
+        self.describe_report["semantic"] = {
+            "num_pairs": len(pairs),
+            "num_edges": len(out),
+            "by_relation": {r: sum(e["relation"] == r for e in out) for r in found},
+            "none_or_unsure": len(pairs) - len(out),
+            "s": round(time.perf_counter() - t0, 1),
+        }
+        log.info("semantic relations: %d of %d pairs", len(out), len(pairs))
+        return out
 
 
 class _CropSource:
@@ -374,3 +448,59 @@ def check_vote(answer: str, old: str, new: str) -> bool:
     has_new = f" {new} " in a or f" {new}s " in a
     has_old = f" {old} " in a or f" {old}s " in a
     return has_new and not has_old
+
+
+def semantic_pairs(
+    nodes: list[dict], edges: list[dict], max_pairs: int
+) -> list[tuple[int, int, list[str]]]:
+    """(a, b, geometric facts) for every pair of non-structure nodes joined by a geometric
+    edge (indices into nodes, a < b), highest edge confidence first."""
+    facts: dict[tuple[int, int], list[str]] = {}
+    conf: dict[tuple[int, int], float] = {}
+    for e in edges:
+        s, t = int(e["source"]), int(e["target"])
+        if s == t or nodes[s]["is_structure"] or nodes[t]["is_structure"]:
+            continue
+        key = (min(s, t), max(s, t))
+        a_is_src = s == key[0]
+        rel = e["relation"]
+        if rel == "near":
+            fact = "A and B are close to each other"
+        else:
+            verb = "is on" if rel == "on" else "is inside"
+            fact = f"A {verb} B" if a_is_src else f"B {verb} A"
+        facts.setdefault(key, []).append(fact)
+        conf[key] = max(conf.get(key, 0.0), float(e["confidence"]))
+    order = sorted(facts, key=lambda k: (-conf[k], k))[:max_pairs]
+    return [(a, b, facts[(a, b)]) for a, b in order]
+
+
+def _describe_node(n: dict) -> str:
+    label = n["label"] or "unknown object"
+    parts = [f'"{label}"']
+    if n.get("caption") and n["caption"] != n["label"]:
+        parts.append(f"({n['caption']})")
+    attrs = ", ".join(f"{k}: {v}" for k, v in (n.get("attributes") or {}).items())
+    if attrs:
+        parts.append(f"[{attrs}]")
+    return " ".join(parts)
+
+
+def build_relation_prompt(a: dict, b: dict, facts: list[str]) -> str:
+    return RELATION_PROMPT.format(a=_describe_node(a), b=_describe_node(b), facts="; ".join(facts))
+
+
+def decode_relations(
+    pairs: list[tuple[int, int, list[str]]], probs: np.ndarray, min_conf: float
+) -> list[dict[str, Any]]:
+    """Semantic edges from the answer probabilities ([len(pairs), len(RELATION_CHOICES)])."""
+    out = []
+    for (a, b, _), p in zip(pairs, probs, strict=True):
+        k = int(np.argmax(p))
+        rel, a_is_source = RELATION_CHOICES[k]
+        if rel is None or float(p[k]) < min_conf:
+            continue
+        s, t = (a, b) if a_is_source else (b, a)
+        out.append({"source": s, "target": t, "relation": rel,
+                    "confidence": round(float(p[k]), 3), "origin": "semantic"})  # fmt: skip
+    return out

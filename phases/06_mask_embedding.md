@@ -170,6 +170,31 @@ za ~1 s). Beží v `sp-gs` vo WSL (transformers už sú tam kvôli 05).
   inštancií v 07 aj počet opráv labelov v 08 (8) ostali rovnaké. Načítanie modelu z disku WSL
   trvá 9–18 s namiesto 44 s. Prah `merge_sim` (0,75) bol kalibrovaný na ViT-H; na *room*
   vyhovuje aj ViT-L, na iných scénach to treba overiť. Profil `fast` používa oboje.
+- [x] ViT-L a `merge_sim` na ďalších scénach (2026-11-13, GTX 1650 vo WSL; vstup 05 s profilom
+  `fast`, výrez `masked`, 3 masky na track, 07 `gsplat_vote` s `fast`; IoU z
+  `scenepipe.eval.lifting_consistency`, priemer / medián / podiel > 0,5; podobnosť = priemerná
+  kosínusová podobnosť masiek v tracku / medzi trackmi):
+
+  | Scéna | Model | `merge_sim` | Čas 06 | Inštancie | IoU 07 | Podobnosť v / medzi |
+  |---|---|---|---|---|---|---|
+  | counter | ViT-H | 0,75 | 206 s | 72 | 0,698 / 0,809 / 80 % | 0,83 / 0,54 |
+  | counter | ViT-L | 0,65 | 71 s | 69 | 0,726 / 0,831 / 82 % | 0,86 / 0,64 |
+  | counter | **ViT-L** | **0,75** | 71 s | 70 | 0,712 / 0,823 / 81 % | |
+  | counter | ViT-L | 0,85 | 71 s | 79 | 0,681 / 0,805 / 78 % | |
+  | kitchen | ViT-H | 0,75 | 41 s | 8 | 0,601 / 0,825 / 66 % | 0,86 / 0,49 |
+  | kitchen | ViT-L | 0,65 / 0,75 | 17 s | 8 | 0,601 / 0,825 / 66 % | 0,89 / 0,60 |
+  | kitchen | ViT-L | 0,85 | 17 s | 9 | 0,598 / 0,821 / 66 % | |
+  | bonsai | ViT-H | 0,75 | 156 s | 33 | 0,222 / 0,078 / 21 % | 0,78 / 0,52 |
+  | bonsai | ViT-L | 0,65 / 0,75 | 51 s | 31 | 0,294 / 0,255 / 24 % | 0,82 / 0,63 |
+  | bonsai | ViT-L | 0,85 | 51 s | 33 | 0,222 / 0,078 / 21 % | |
+
+  ViT-L s prahom 0,75 je na všetkých troch scénach rovnako dobrý alebo lepší než ViT-H
+  (rovnaké nastavenie výrezov) a 3× rýchlejší. ViT-L má vyššiu podobnosť aj medzi rôznymi
+  trackmi (0,60–0,64 vs. 0,49–0,54), takže nad prahom 0,75 je viac dvojíc trackov (counter
+  28 % vs. 9 %), ale spájanie vyžaduje aj prekryv v 3D (`merge_overlap`), takže sa to
+  neprejaví. 0,65 nepoškodí, 0,85 škodí všade; prah 0,75 ostáva pre oba modely. *bonsai* má
+  nízke IoU nezávisle od modelu (zlé tagy 04: chýba *bonsai*, navyše *park*, *attach*,
+  *miniature*; veľké masky *floor*, *carpet*, *tray*), pozri `phases/07_lifting.md`.
 
 ## Zdroje
 

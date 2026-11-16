@@ -77,6 +77,23 @@ pri 09–13 podľa špecifikácie). Fázy 02–08 aj edit loop čítajú snímky
 dajú sa teda spustiť paralelne s tréningom gaussiánov (monitor: `max_parallel` v
 `configs/local.yaml`; na 4 GB GPU sa to neoplatí).
 
+## Časy buildu (*m360_room*, GTX 1650, 12 GB RAM vo WSL)
+
+Súvislý `python -m scenepipe build --scene m360_room_fast --profile fast` (2026-11-13, 300
+snímok): 00 30 s, 01 503 s, 02 921 s, 03 226 s, 04 26 s, 05 926 s, 06 80 s, 07 37 s, 08 745 s,
+**spolu 58,2 min**. Skoršie „43 min“ (2026-11-10) bol súčet časov z dvoch rôznych behov, nie
+jeden súvislý build. Počas tohto behu bežali na CPU iné testy (01 extrakcia 138 s
+namiesto ~96 s), čistý beh by bol o ~1–2 min kratší.
+
+Súvislý `build --scene m360_room_default` s `default.yaml` (2026-11-13/14, vrátane
+`fill_unassigned: projection`): 00 31 s, 01 821 s, 02 5 153 s, 03 468 s, 04 38 s, 05 4 025 s,
+06 5 376 s, 07 369 s, 08 1 919 s, **spolu 303 min**. 01: 300/300 kamier, 0,50 px; 02: PSNR
+32,87 / SSIM 0,948 / LPIPS 0,108 (1 M gaussiánov, 30k krokov); 03: 31,62 / 0,946 / 0,112
+(787 158 ponechaných); 05: 300 snímok, 4 702 masiek, 306 trackov; 07: 91 inštancií, priradených
+80,1 % (43 288 doplnených projekciou), IoU konzistencie 0,594 / 0,704 / 64 % (televízor 0,40,
+entertainment center 0,38); 08: 91 uzlov, 281 hrán, 21,8 s na uzol. Najdlhšie sú 06 (ViT-H,
+všetky masky, 2 výrezy) a 02; profil `fast` je ~5× rýchlejší.
+
 ## Stav scény
 
 Výstup buildu aj každej úpravy je **stav scény** (`state/vNNN/state.json`), ktorý ukazuje na

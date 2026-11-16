@@ -187,7 +187,11 @@ so známymi maskami, pomocné funkcie bez modelu), `tests/test_masks.py`. Beží
   tracky než pri obiehaní objektu). *kitchen*: lego buldozér (*excavator*) a podložky presné;
   doska stola má v jednom tracku labely *floor / table / carpet / mat*. Objekty mimo
   slovníka (fľaše, poháre, miska v pozadí) sa nesegmentujú vôbec, to je obmedzenie 04.
-- [ ] default (všetky snímky) s prenosom trackov
+- [x] default (všetky snímky) s prenosom trackov (2026-11-13, *m360_room*, súvislý default build,
+  GTX 1650 vo WSL): 300 snímok, 4 702 masiek (15,7 na snímku), 306 trackov, 4 025 s (13,4 s na
+  snímku; `fast` s každou 3. snímkou 926 s, 1 358 masiek). V 07 IoU konzistencie 0,594 / 0,704
+  (`fast`: 0,605 / 0,692), takže 3× viac snímok kvalitu liftingu nezlepší; presnosť masiek
+  voči GT čaká na ručnú anotáciu.
 - [ ] poradie snímok podľa covisibility pre neusporiadané fotky
 - [ ] mIoU na ručne anotovaných snímkach (sekcia Evaluácia)
 

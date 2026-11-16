@@ -86,7 +86,7 @@ Váhy (iba so súhlasom, 8,9 GB):
 source ~/sp-gs.sh
 pip install bitsandbytes accelerate
 python -c "from huggingface_hub import snapshot_download as d; d('Qwen/Qwen3-VL-4B-Instruct', cache_dir='checkpoints/huggingface', allow_patterns=['*.json', '*.safetensors', '*.txt', '*.jinja', 'LICENSE*', 'README.md'])"
-HF_HUB_OFFLINE=1 python -m scenepipe run 08_scene_graph --scene room
+python -m scenepipe run 08_scene_graph --scene room   # HF_HUB_OFFLINE=1 zo ~/sp-gs.sh
 ```
 
 ### Váhy modelov na disku WSL (rýchlejšie načítanie)
@@ -103,3 +103,14 @@ echo 'export SCENEPIPE_CHECKPOINTS=~/checkpoints' >> ~/sp-gs.sh
 
 Po stiahnutí nového modelu do `checkpoints/` treba `rsync` zopakovať (alebo sťahovať rovno
 do `~/checkpoints`). Bez premennej sa používa `checkpoints/` v repozitári ako doteraz.
+
+### Bez dotazov na Hugging Face Hub
+
+`transformers` a `huggingface_hub` aj pri váhach v lokálnej cache posielajú pri načítaní HTTP
+dotazy na Hub (kontrola novšej verzie), čo spomaľuje fázy 04–08 a bez siete zlyhá. Preto
+`~/sp-gs.sh` nastavuje offline režim; na stiahnutie nového modelu ho treba na jeden príkaz
+vypnúť (`HF_HUB_OFFLINE=0 python -c "..."`).
+
+```bash
+echo 'export HF_HUB_OFFLINE=1' >> ~/sp-gs.sh
+```

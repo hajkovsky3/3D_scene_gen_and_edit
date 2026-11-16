@@ -1,7 +1,7 @@
 """Pair selection for the `retrieval` matcher: temporal neighbours + bag-of-words retrieval.
 
-The visual vocabulary is built on the fly from the SIFT descriptors of the scene itself
-(k-means in numpy), so no pretrained vocabulary tree has to be downloaded.
+The visual vocabulary is built on the fly from the descriptors of the scene itself (k-means in
+numpy), so no pretrained vocabulary tree is needed (`matcher: vocab_tree` uses COLMAP's).
 """
 
 from __future__ import annotations
@@ -47,11 +47,19 @@ def assign(x: np.ndarray, centers: np.ndarray) -> np.ndarray:
 
 
 def bow_similarity(
-    descriptors: list[np.ndarray], num_words: int, sample: int, seed: int = 0
+    descriptors: list[np.ndarray], num_words: int, sample: int, seed: int = 0, sift: bool = True
 ) -> np.ndarray:
-    """[n, n] cosine similarity of tf-idf bag-of-words vectors (diagonal set to -1)."""
+    """[n, n] cosine similarity of tf-idf bag-of-words vectors (diagonal set to -1).
+
+    SIFT descriptors are turned into RootSIFT; other (already L2-normalized float) descriptors,
+    e.g. ALIKED, are used as they are.
+    """
     rng = np.random.default_rng(seed)
-    feats = [root_sift(d) if len(d) else np.zeros((0, 128), np.float32) for d in descriptors]
+    dim = next((d.shape[1] for d in descriptors if len(d)), 128)
+    feats = [
+        (root_sift(d) if sift else np.asarray(d, np.float32)) if len(d) else np.zeros((0, dim))
+        for d in descriptors
+    ]
     pool = np.concatenate([f for f in feats if len(f)], axis=0)
     if len(pool) > sample:
         pool = pool[rng.choice(len(pool), sample, replace=False)]

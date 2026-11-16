@@ -109,6 +109,12 @@ class LiftingBase(Phase):
         "fragment_attach_share": 0.5,  # a fragment's masks join the instance with this vote share
         "zero_shot_weight": 0.5,  # weight of the 06 zero-shot label scores in label_votes
         "feature_min_sim": 0.6,  # drop mask embeddings less similar to the first mean
+        # leftover gaussians (no eligible instance, e.g. reflections on a TV screen): none |
+        # projection = the instance whose masks contain the center in >= fill_min_share of
+        # its frames, inside its box enlarged by fill_margin (see fill_by_projection)
+        "fill_unassigned": "none",
+        "fill_min_share": 0.6,
+        "fill_margin": 0.1,
         "num_debug": 6,
     }
 
@@ -214,6 +220,19 @@ class LiftingBase(Phase):
                 c.tracks |= frag.tracks
                 absorbed += 1
         log.info("%d fragments below min_views, %d attached to instances", len(fragments), absorbed)
+        filled = 0
+        if cfg["fill_unassigned"] == "projection":
+            owner = {m: new for new, k in enumerate(keep) for m in insts[k].masks}
+            inst_id, conf, filled = fill_by_projection(
+                inst_id, conf, g.means, visibility, frames, owner, len(keep), cfg
+            )
+            counts = np.zeros(len(insts), np.int64)
+            counts[keep] = np.bincount(inst_id[inst_id >= 0], minlength=len(keep))
+            log.info("fill_unassigned: %d gaussians filled by projection", filled)
+        elif cfg["fill_unassigned"] != "none":
+            raise ValueError(
+                f"fill_unassigned {cfg['fill_unassigned']!r}, expected none | projection"
+            )
 
         # 4. labels and features
         label_scores = self._label_scores()
@@ -262,6 +281,7 @@ class LiftingBase(Phase):
             "num_fragments": len(fragments), "num_fragments_attached": absorbed,
             "num_instances": len(instances),
             "assigned_share": round(assigned / max(n, 1), 4),
+            "num_filled": filled,
             "unobserved_share": round(float((visibility <= 0).mean()) if n else 0.0, 4),
             "labels": dict(Counter(i["label"] for i in instances).most_common()),
             "weights_s": round(weights_s, 1),
@@ -613,3 +633,74 @@ def _color(key: str) -> tuple[int, int, int]:
 
 def _write_json(path: Path, doc: dict) -> None:
     path.write_text(json.dumps(doc, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def fill_by_projection(
+    inst_id: np.ndarray,
+    conf: np.ndarray,
+    means: np.ndarray,
+    visibility: np.ndarray,
+    frames: list[FrameMasks],
+    owner: dict[str, int],
+    k: int,
+    cfg: dict,
+) -> tuple[np.ndarray, np.ndarray, int]:
+    """Assign observed gaussians without an instance by the projection of their centers.
+
+    For every unassigned gaussian with visibility > 0 and every instance: the share of the
+    instance's frames (frames with one of its masks, center in front of the camera and inside
+    the image) where the center falls inside the instance's masks. The best instance wins if
+    the share is >= fill_min_share over >= min_views frames and the center lies inside the
+    instance's box (2-98 % percentiles of its gaussians, enlarged on every side by
+    fill_margin x its longest side, so flat objects such as a screen get some depth), which
+    keeps far background that projects into a mask from one side only.
+    Occlusion is ignored; confidence of a filled gaussian = its share.
+    """
+    cand = np.nonzero((inst_id < 0) & (visibility > 0))[0]
+    if len(cand) == 0 or k == 0:
+        return inst_id, conf, 0
+    lo = np.zeros((k, 3))
+    hi = np.zeros((k, 3))
+    for j in range(k):
+        pts = means[inst_id == j]
+        a, b = np.percentile(pts, 2, axis=0), np.percentile(pts, 98, axis=0)
+        m = float(cfg["fill_margin"]) * float((b - a).max())  # flat objects: by the longest side
+        lo[j], hi[j] = a - m, b + m
+    pts = means[cand].astype(np.float64)
+    hits = np.zeros((len(cand), k), np.uint16)
+    seen = np.zeros((len(cand), k), np.uint16)
+    for fm in frames:
+        ks = [owner.get(mid) for mid in fm.mask_ids]
+        present = sorted({j for j in ks if j is not None})
+        if not present:
+            continue
+        cam = fm.camera
+        label = np.full((cam.height, cam.width), -1, np.int32)
+        for j, mask in zip(ks, fm.masks, strict=True):
+            if j is not None:
+                label[mask.astype(bool)] = j
+        w2c = np.asarray(cam.world_to_camera, np.float64)
+        pc = pts @ w2c[:3, :3].T + w2c[:3, 3]
+        z = pc[:, 2]
+        kk = np.asarray(cam.K, np.float64)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            u = np.floor(kk[0, 0] * pc[:, 0] / z + kk[0, 2]).astype(np.int64)
+            v = np.floor(kk[1, 1] * pc[:, 1] / z + kk[1, 2]).astype(np.int64)
+        ok = (z > 1e-6) & (u >= 0) & (v >= 0) & (u < cam.width) & (v < cam.height)
+        idx = np.nonzero(ok)[0]
+        seen[np.ix_(idx, present)] += 1
+        lab = label[v[idx], u[idx]]
+        hit = lab >= 0
+        np.add.at(hits, (idx[hit], lab[hit]), 1)
+    share = hits / np.maximum(seen, 1)
+    share[seen < int(cfg["min_views"])] = 0
+    inside = np.all((pts[:, None, :] >= lo[None]) & (pts[:, None, :] <= hi[None]), axis=2)
+    share[~inside] = 0
+    best = np.argmax(share, axis=1)
+    s = share[np.arange(len(cand)), best]
+    ok = s >= float(cfg["fill_min_share"])
+    inst_id = inst_id.copy()
+    conf = conf.copy()
+    inst_id[cand[ok]] = best[ok]
+    conf[cand[ok]] = s[ok]
+    return inst_id, conf, int(ok.sum())

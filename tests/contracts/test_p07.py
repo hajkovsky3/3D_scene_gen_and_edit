@@ -226,3 +226,32 @@ def test_pointcloud_projection():
     u, v, ok = project_visible(means, cam, depth, 0.05)
     assert ok.tolist() == [True, False, False, False, True]
     assert (u[0], v[0]) == (4, 3) and (u[4], v[4]) == (0, 0)
+
+
+def test_fill_by_projection():
+    from scenepipe.core.cameras import Camera
+    from scenepipe.phases.p07_lifting.common import FrameMasks, fill_by_projection
+
+    # instance 0: gaussians around x in [0, 1]; camera looks along +z from z = -5
+    means = np.array(
+        [[x, 0.0, 0.0] for x in np.linspace(0, 1, 50)]
+        + [[0.5, 0.0, 0.02], [0.5, 0.0, 3.0], [3.0, 0.0, 0.0]],  # near, far behind, outside
+        np.float32,
+    )
+    inst = np.array([0] * 50 + [-1, -1, -1], np.int32)
+    conf = np.where(inst >= 0, 1.0, 0.0).astype(np.float16)
+    vis = np.ones(len(means), np.float32)
+    frames = []
+    for i, dx in enumerate((-0.2, 0.0, 0.2)):
+        w2c = np.eye(4)
+        w2c[:3, 3] = [-dx, 0, 5]
+        cam = Camera(f"f{i}", "", 200, 100, 100.0, 100.0, 100.0, 50.0, w2c)
+        mask = np.zeros((100, 200), bool)
+        mask[40:60, 90:135] = True  # covers the projection of x in ~[-0.5, 1.7]
+        frames.append(FrameMasks(cam, [f"m{i}"], [mask]))
+    owner = {f"m{i}": 0 for i in range(3)}
+    cfg = {"min_views": 3, "fill_min_share": 0.6, "fill_margin": 0.1}
+    new, c, n = fill_by_projection(inst, conf, means, vis, frames, owner, 1, cfg)
+    assert n == 1 and new[50] == 0 and float(c[50]) == pytest.approx(1.0)
+    assert new[51] == -1 and new[52] == -1  # outside the enlarged box
+    assert (new[:50] == 0).all()

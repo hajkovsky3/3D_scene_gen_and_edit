@@ -157,12 +157,13 @@ LIGHTGLUE_SIFT_CONF = {"input_dim": 128, "add_scale_ori": True}
 CACHE_IMAGES = 64  # images whose tensors are kept on the device
 
 
-def load_lightglue(weights: str, device: str = "cuda"):
-    """LightGlue for SIFT from a local `sift_lightglue.pth` (no download at run time)."""
+def load_lightglue(weights: str, device: str = "cuda", conf: dict | None = None):
+    """LightGlue from local weights (no download at run time): `sift_lightglue.pth` with the
+    default `conf`, `aliked_lightglue.pth` with `LIGHTGLUE_ALIKED_CONF`."""
     import torch
     from kornia.feature import LightGlue
 
-    model = LightGlue(None, **LIGHTGLUE_SIFT_CONF)
+    model = LightGlue(None, **(LIGHTGLUE_SIFT_CONF if conf is None else conf))
     state = torch.load(weights, map_location="cpu", weights_only=True)
     for i in range(model.conf.n_layers):  # old checkpoint layout, renamed like kornia does
         for old, new in ((f"self_attn.{i}", f"transformers.{i}.self_attn"),
@@ -201,7 +202,8 @@ def match_pairs_lightglue(
     on_progress: Callable[[int], None] | None = None,
     progress_every: int = 20,
 ) -> Iterator[tuple[int, int, np.ndarray]]:
-    """Yield (i, j, matches uint32[M, 2]) for every pair; `features` from `sift_lightglue_inputs`.
+    """Yield (i, j, matches uint32[M, 2]) for every pair; `features` from `sift_lightglue_inputs`
+    or `aliked_lightglue_inputs`.
 
     Pairs run one at a time (LightGlue's point pruning keeps a different number of points per
     pair, so batching would not help). Tensors of an image are moved to the device once.
@@ -234,3 +236,71 @@ def match_pairs_lightglue(
             done += 1
             if on_progress is not None and (done % progress_every == 0 or done == len(pairs)):
                 on_progress(done)
+
+
+# --- ALIKED + LightGlue (`features: aliked`) ---
+#
+# ALIKED (Zhao et al., IEEE TIM 2023; weights aliked-n16rot from Shiaoming/ALIKED, BSD-3-Clause),
+# network from kornia (Apache 2.0); matched with LightGlue and its ALIKED weights from
+# cvg/LightGlue (Apache 2.0). COLMAP only gets the keypoints and the matches (its own ALIKED
+# needs an ONNX build of pycolmap); descriptors stay in memory.
+
+LIGHTGLUE_ALIKED_CONF = {"input_dim": 128}
+
+
+def load_aliked(model_name: str, weights: str, max_keypoints: int, device: str = "cuda"):
+    """kornia ALIKED with local weights, top `max_keypoints` maxima above the default
+    detection threshold 0.2 (like LightGlue's extractor)."""
+    import torch
+    from kornia.feature import ALIKED
+
+    model = ALIKED(model_name=model_name, max_num_keypoints=max_keypoints)
+    state = torch.load(weights, map_location="cpu", weights_only=True)
+    missing = model.load_state_dict(state, strict=False).missing_keys
+    params = dict(model.named_parameters())
+    if any(name in params for name in missing):
+        raise RuntimeError(f"{weights}: ALIKED weights incomplete, missing {missing}")
+    return model.eval().to(torch.device(device))
+
+
+def extract_aliked(model, image: np.ndarray, max_size: int) -> tuple[np.ndarray, np.ndarray]:
+    """ALIKED on an RGB uint8 image [H, W, 3], downscaled so its longer side is <= max_size.
+
+    Returns keypoints float32 [N, 2] in COLMAP's convention (pixel corner origin, full image
+    resolution) and L2-normalized descriptors float32 [N, 128].
+    """
+    import torch
+    import torch.nn.functional as F
+
+    h, w = image.shape[:2]
+    scale = min(1.0, max_size / max(h, w)) if max_size > 0 else 1.0
+    dev = next(model.parameters()).device
+    with torch.inference_mode():
+        x = (
+            torch.from_numpy(np.ascontiguousarray(image).copy())
+            .to(dev)
+            .permute(2, 0, 1)[None]
+            .float()
+            / 255.0
+        )
+        if scale < 1.0:
+            size = (round(h * scale), round(w * scale))
+            x = F.interpolate(x, size=size, mode="bilinear", antialias=True, align_corners=False)
+        f = model(x)[0]
+        sx = w / x.shape[3]
+        sy = h / x.shape[2]
+        kp = f.keypoints.float().cpu().numpy()
+    # kornia: pixel centers at integer coordinates of the resized image
+    kp = np.stack([(kp[:, 0] + 0.5) * sx, (kp[:, 1] + 0.5) * sy], axis=1).astype(np.float32)
+    return kp, f.descriptors.float().cpu().numpy()
+
+
+def aliked_lightglue_inputs(
+    keypoints: np.ndarray, descriptors: np.ndarray, width: int, height: int
+):
+    """COLMAP-convention ALIKED keypoints [N, 2] + descriptors -> LightGlue dict (CPU numpy)."""
+    return {
+        "keypoints": np.asarray(keypoints, dtype=np.float32).reshape(-1, 2) - 0.5,
+        "descriptors": np.asarray(descriptors, dtype=np.float32),
+        "image_size": np.array([width, height], dtype=np.float32),
+    }

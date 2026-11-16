@@ -255,7 +255,22 @@ a confidence s fázou 03 a bez nej (`impl: none`).
   odstránený ohraničením) dotréning nezaplní, lebo nepridáva gaussiány; `isolated_keep_extent` 5
   ho zlepší (−8,7 → −4,4 dB pri 1000 krokoch) za cenu 440 gaussiánov. Či sa nevrátia škvrny,
   treba pozrieť v SuperSplate, default ostáva 0.
-- [ ] vizuálne porovnanie `isolated_keep_extent` 0 / 5 s dotréningom (výhľad z okna, škvrny)
+- [x] vizuálne porovnanie `isolated_keep_extent` 0 / 5 s dotréningom (2026-11-13, *m360_room*,
+  súvislý build `fast`, 1000 krokov dotréningu; mriežka renderov
+  `workspace/m360_room_fast/03_refinement/_cmp/keep_extent.jpg` z `scenepipe.eval.render_compare`,
+  pohľady f000289, f000033, f000105, f000201 na trajektórii a posunuté o 0,3 hore a dozadu):
+
+  | Variant | Ponechané | PSNR / SSIM / LPIPS | Diery z nových uhlov (0 / 0,3 / 0,6) | Nesúlad hĺbky (0 / 0,3 / 0,6) |
+  |---|---|---|---|---|
+  | `isolated_keep_extent` 0 (default) | 404 071 | 29,58 / 0,927 / 0,155 | 0,056 / 0,087 / 0,241 | 0,053 / 0,111 / 0,171 |
+  | `isolated_keep_extent` 5 | 404 515 | 29,66 / 0,927 / 0,154 | 0,051 / 0,071 / 0,224 | 0,054 / 0,151 / 0,165 |
+
+  Vizuálne sú varianty takmer totožné: okno vo f000033 a f000105 je v oboch (rozmazané, ako
+  v 02), škvrny sa s hodnotou 5 nevrátili. Hodnota 5 mierne zmenší diery z posunutých pohľadov
+  (−18 % pri 0,3) a nesúlad hĺbky pri 0,3 zhorší (0,111 → 0,151). Rozdiel je malý a
+  nejednoznačný, default ostáva 0. Z posunutých pohľadov majú oba varianty čierne miesta pod
+  stropom, kde 02 kreslí hmlu (odstránená ako priehľadné / mimo kvádra), dotréning ich
+  nezaplní.
 - [x] default na plne natrénovaných scénach (2026-10-27, výstupy 02 s 30k krokmi, 1 M gaussiánov,
   LPIPS s VGG, dotréning 2000 krokov):
 

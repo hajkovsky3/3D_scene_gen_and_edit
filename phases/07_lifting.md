@@ -181,6 +181,9 @@ lifting:
   min_gaussians: 200
   min_views: 3
   fragment_attach_share: 0.5
+  fill_unassigned: projection   # none | projection (doplnenie nepriradených gaussiánov)
+  fill_min_share: 0.6
+  fill_margin: 0.1
   zero_shot_weight: 0.5
   feature_min_sim: 0.6
   num_debug: 6
@@ -203,12 +206,22 @@ GPU (gsplat). Pamäť riadená `mask_batch`; s cullingom a riedkym ukladaním zv
 - Objekty videné len z jednej strany → neúplné inštancie (iba viditeľná časť má gaussiány).
 - Rozhodnutie časť vs. celok (hierarchia) nie je riešené; aktuálne pravidlo „menšia vyhráva“.
   Masky „kontajnerov“ (*floor* s kobercami, *entertainment center* s televízorom a policami)
-  preto v metrike konzistencie vychádzajú zle (*room*: IoU 0,24 a 0,21), hoci je to zámer.
-- Lesklé a odrazivé plochy (obrazovka, sklo, zrkadlo): 3DGS modeluje odlesky gaussiánmi za
-  povrchom, ktoré sú v iných pohľadoch inde. Na *room* ležia gaussiány z masiek televízora
-  v ostatných pohľadoch mimo nich (medián pokrytia 0,10) a rozptýlia sa do 11 iných inštancií
-  alebo ostanú nepriradené (IoU televízora 0,21). Lifting to neopraví; pomôcť môže geometria
-  z 02 (hĺbkový prior) alebo samostatné spracovanie odrazivých plôch.
+  preto v metrike konzistencie vychádzajú zle (*room*: IoU 0,24 a 0,21), hoci je to zámer:
+  metrika porovnáva s maskou celku, inštancia je celok bez častí. Ručná anotácia
+  (`docs/evaluation.md`) kreslí masky bez prekryvu, takže `scenepipe.eval.lifting_gt` meria
+  kontajnery spravodlivo. Vzťah časť/celok v grafe môže doplniť `part_of` z 08
+  (`semantic_relations`), na *room* je však nespoľahlivý (`phases/08_scene_graph.md`).
+- Lesklé a odrazivé plochy (obrazovka, sklo, zrkadlo): 3DGS modeluje odlesky vrstvou
+  gaussiánov pred aj za povrchom, ktorá je z iných pohľadov inde. Diagnóza na *m360_room*
+  (2026-11-13, súvislý build `fast`): 72 % pixelov masiek televízora sa vyrenderuje ako
+  „žiadna inštancia“ (16 % televízor, 12 % reproduktor), nie ako iné inštancie. Nepriradené
+  gaussiány na obrazovke sú dobre pozorované (viditeľnosť ~70), ale nemajú žiadneho
+  kandidáta: ich pokrytie maskami televízora je < `min_coverage` (váha v maske je malá, lebo
+  ich zakrývajú iné vrstvy). Ležia v hĺbke 0,86–1,21 × vzdialenosť obrazovky a ich stred
+  padne do masky televízora v mediáne 50 % snímok televízora (gaussiány televízora 86 %).
+  Čiastočná náprava: `fill_unassigned: projection` (Stav). Pri úprave (12) treba s odleskami
+  počítať: odstránenie televízora môže nechať časť vrstvy, pomôže zmazať aj nepriradené
+  gaussiány v OBB objektu.
 - Kalibrácia prahov — robiť na jednej scéne s ručnou 3D anotáciou a zafixovať.
 
 ## Evaluácia
@@ -282,6 +295,27 @@ prerušených trackoch, pozadie, šum; gradientový trik na 3 gaussiánoch iba s
   ručnú 3D anotáciu (Riziká).
 - [x] baseline `pointcloud_project` (`pointcloud_project.py`: projekcia stredov, hĺbka renderovaná z 03; spájanie a hlasovanie spoločné)
 - [x] kontraktový test
+- [x] doplnenie nepriradených gaussiánov projekciou (`fill_unassigned: projection`, 2026-11-13,
+  default): pozorovaný gaussián bez inštancie dostane inštanciu, do ktorej masiek padne jeho
+  stred v ≥ `fill_min_share` (0,6) jej snímok (aspoň `min_views`), ak leží v jej kvádri
+  (percentily 2–98 % jej gaussiánov) zväčšenom o `fill_margin` × najdlhšia strana. Zakrytie
+  sa neberie do úvahy, kváder bráni priradeniu vzdialeného pozadia. Confidence = podiel.
+  `report.json` → `num_filled`. Výsledok (profil `fast`, `lifting_consistency`):
+
+  | Scéna | Variant | Priradené gaussiány | IoU priemer / medián / > 0,5 | Televízor | Entertainment center |
+  |---|---|---|---|---|---|
+  | room | bez doplnenia | 77,2 % | 0,575 / 0,674 / 65 % | 0,11 | 0,23 |
+  | room | **projekcia** | 80,2 % (+12 258) | **0,605** / 0,692 / 68 % | **0,37** | 0,29 |
+  | counter | bez doplnenia | 82,1 % | 0,712 / 0,823 / 81 % | — | — |
+  | counter | **projekcia** | 82,8 % (+6 341) | 0,716 / 0,828 / 81 % | — | — |
+
+  Metrika porovnáva s rovnakými maskami, ktoré doplnenie používa, takže zisk je
+  nadhodnotený; overiť voči ručnej anotácii (`scenepipe.eval.lifting_gt`).
+- [ ] *bonsai* (2026-11-13, build `fast`): IoU 0,29 / 0,26, nízke nezávisle od modelu v 06;
+  zlé tagy z 04 (chýba *bonsai*, navyše *park*, *attach*, *miniature*), rozbor podľa labelov
+  zatiaľ chýba
+- [ ] kalibrácia prahov voči ručnej anotácii (`python -m scenepipe.eval.lifting_sweep`,
+  čaká na anotácie)
 
 ## Zdroje
 
